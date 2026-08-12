@@ -71,5 +71,8 @@ docs/roadmap-221-tools.md
 # `dotnet pack` output (CI publishes nupkg from here)
 artifacts/
 
+# Local `dotnet publish` output (MCP registry / KEI dry-run packs)
+publish/
+
 # Local AI review sessions (prompt + output dumps)
 runs/
