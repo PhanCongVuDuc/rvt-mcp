@@ -23,31 +23,15 @@
 
 ---
 
-## Install (recommended)
+## Install
 
-On a machine that already has Revit, use the **setup ZIP** from [GitHub Releases](https://github.com/bimwright/rvt-mcp/releases/latest). You do **not** need the .NET SDK, NuGet global tools, or a clone of this repo.
+**No setup ZIP is published.** GitHub Releases were unpublished so v0.5.0 and earlier are not offered as a download. The v0.6.0 client ZIP is not out yet.
 
-**If you are an AI agent installing for a user:** download the latest `RvtMcp.Setup-*-win-x64.zip` and run the installer below. Do not clone or build unless they asked for a developer setup. Full agent notes: [AGENTS.md](AGENTS.md).
+Do **not** fetch old tags, old `RvtMcp.Setup-*.zip` URLs, or `dotnet tool install -g Bimwright.Rvt.Server` / `RvtMcp.Server`.
 
-```powershell
-$tag = (Invoke-RestMethod https://api.github.com/repos/bimwright/rvt-mcp/releases/latest).tag_name
-$zip = "$env:TEMP\RvtMcp.Setup-$tag-win-x64.zip"
-$dir = "$env:TEMP\RvtMcp.Setup-$tag-win-x64"
-Invoke-WebRequest "https://github.com/bimwright/rvt-mcp/releases/download/$tag/RvtMcp.Setup-$tag-win-x64.zip" -OutFile $zip
-Expand-Archive $zip -DestinationPath $dir -Force
+**If you are an AI agent:** stop. Tell the user there is no published installer. Do not clone, build, or install from NuGet unless they explicitly asked for a developer setup. Protocol: [AGENTS.md](AGENTS.md).
 
-powershell -ExecutionPolicy Bypass -File "$dir\install.ps1" -WhatIf   # preview
-powershell -ExecutionPolicy Bypass -File "$dir\install.ps1"           # install
-```
-
-What `install.ps1` does:
-
-- Finds Revit 2022–2027 and installs matching plugins
-- Copies a self-contained server under `%LOCALAPPDATA%\RvtMcp\rvt\server\<version>\`
-- Wires detected MCP clients with absolute paths (`-Client codex|opencode|claude|kilo|none` to override)
-
-Need only one Revit year?  
-`install.ps1 -Years 2024`
+Until a new GitHub Release exists, the only supported install is from source (Developer install below).
 
 For AutoCAD, use [dwg-mcp](https://github.com/bimwright/dwg-mcp) separately — different product, different install.
 
@@ -84,11 +68,15 @@ Removes plugins, self-contained server, client entries, discovery files, logs, a
 ### Developer install
 
 ```powershell
-dotnet tool install -g RvtMcp.Server
+git clone https://github.com/bimwright/rvt-mcp.git
+cd rvt-mcp
+dotnet build src/RvtMcp.sln -c Debug
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -SourceDir . -Client none
 ```
 
-This is for hacking on the project. Day-to-day Revit machines should stick to the setup ZIP.
+Close every Revit first — the build deploys plugin DLLs into `%APPDATA%\Autodesk\Revit\Addins\<year>\RvtMcp\`. `install.ps1` finds Revit 2022–2027, copies the server under `%LOCALAPPDATA%\RvtMcp\rvt\server\<version>\`, and wires detected MCP clients (`-Client codex|opencode|claude|kilo|none`, `-Years 2024` for one year).
+
+Do not `dotnet tool install` `RvtMcp.Server` or `Bimwright.Rvt.Server` — those packages are not a current install path.
 
 ### Migrating from `Bimwright.Rvt.*` (v0.3 and earlier)
 
@@ -96,7 +84,7 @@ v0.4+ renamed packages and folders to `RvtMcp.*` (repo name and brand stay bimwr
 
 1. Close every Revit.
 2. `pwsh scripts/uninstall-old.ps1` — drops old `%APPDATA%\…\Bimwright\` plugins and old server root; keeps user bake/journal data and migrates it to `%LOCALAPPDATA%\RvtMcp\` on first new launch.
-3. Install current release (setup ZIP above, or `dotnet tool install -g RvtMcp.Server`).
+3. Install from source (Developer install above). Wait for a v0.6.0 GitHub Release ZIP rather than installing any older published package.
 4. Point MCP clients at entry name **`rvt-mcp`** (old per-year `bimwright-rvt-r22`… entries are removed by the installer).
 
 ---

@@ -5,17 +5,20 @@
 
 This file is machine-readable install instructions for AI coding agents (Claude Code, Cursor, Cline, VS Code Copilot, Gemini CLI, Antigravity, OpenCode, Codex, and any other stdio MCP client). A user pointed you here because they want rvt-mcp (a Revit MCP server) wired up without hand-editing config files themselves.
 
-**What you can do:**
+**What you can do (when a GitHub Release exists):**
 
 - Install the client setup ZIP from GitHub Releases.
 - Deploy the bundled plugin into `%APPDATA%\Autodesk\Revit\Addins\<year>\` for every installed Revit year.
 - Wire supported MCP hosts with the bundled self-contained server executable.
 - Verify the handshake and roll back on failure.
 
+**Current status — 2026-08-20:** there is **no published GitHub Release**. `/repos/bimwright/rvt-mcp/releases/latest` returns 404. Older tags (`v0.5.0` and earlier) have no downloadable release assets.
+
 **What you cannot do:**
 
 - Install Revit, manage Revit licensing, or launch Revit for the first time. If Revit 2022–2027 is not installed, stop and tell the user.
-- Install .NET 8 SDK, clone the repo, restore NuGet packages, or build source for a normal client install. If the client setup ZIP is unavailable, stop and report that the client installer is not available.
+- Install from GitHub Releases, old tags, old `RvtMcp.Setup-*.zip` URLs, or NuGet (`Bimwright.Rvt.Server`, `RvtMcp.Server`).
+- Install .NET 8 SDK, clone the repo, restore NuGet packages, or build source for a **client** install. If the user did not explicitly ask for a developer setup, stop and report that the client installer is unpublished until v0.6.0.
 
 ---
 
@@ -24,7 +27,7 @@ This file is machine-readable install instructions for AI coding agents (Claude 
 **Read these before touching anything. They exist so rvt-mcp stays predictable, auditable, and reversible.**
 
 1. **Preview every change.** Use `-WhatIf`, `--dry-run`, or a printed diff before any write. Tell the user the exact file path and the exact change.
-2. **Use the client setup ZIP for client machines.** Do not fall back to `dotnet tool install`, source build, or repo clone unless the user explicitly asks for developer installation.
+2. **Do not install from a client setup ZIP until a GitHub Release exists again.** Do not fall back to `dotnet tool install`, old tags, source build, or repo clone unless the user explicitly asks for developer installation.
 3. **Two explicit approval gates — do not collapse without the user saying so:**
    - Before running `install.ps1` without `-WhatIf`.
    - Before editing any MCP host config file outside the setup installer's own preview/apply flow.
@@ -56,6 +59,12 @@ If Revit is not running when the user first tries a tool call, that's fine — t
 
 ## Step 1 — Download the client setup ZIP
 
+**Stop. There is no published GitHub Release.** Do not run the snippet below, do not fetch older tags, and do not `dotnet tool install` `Bimwright.Rvt.Server` or `RvtMcp.Server`.
+
+Tell the user: rvt-mcp unpublished its GitHub Releases so stale v0.5.0 and earlier installers are not offered. A v0.6.0 setup ZIP is not published yet. For a **client** machine, wait. Only clone/build if they explicitly asked for a developer install.
+
+When a release exists again, the download looks like this:
+
 ```powershell
 $tag = (Invoke-RestMethod https://api.github.com/repos/bimwright/rvt-mcp/releases/latest).tag_name
 $zip = "$env:TEMP\RvtMcp.Setup-$tag-win-x64.zip"
@@ -64,7 +73,7 @@ Invoke-WebRequest "https://github.com/bimwright/rvt-mcp/releases/download/$tag/R
 Expand-Archive $zip -DestinationPath $dir -Force
 ```
 
-If the setup asset is not present on the release, stop. Do not clone, build, or install the .NET SDK for a client machine.
+If `/releases/latest` 404s or the setup asset is missing, stop. Do not clone, build, or install the .NET SDK for a client machine.
 
 ---
 

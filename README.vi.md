@@ -23,31 +23,15 @@
 
 ---
 
-## Cài đặt (khuyến nghị)
+## Cài đặt
 
-Máy đã có Revit: dùng **setup ZIP** từ [GitHub Releases](https://github.com/bimwright/rvt-mcp/releases/latest). **Không** cần .NET SDK, NuGet global tool, hay clone repo này.
+**Hiện không có setup ZIP.** GitHub Releases đã gỡ nên v0.5.0 trở về trước không còn để tải. ZIP client v0.6.0 chưa phát hành.
 
-**Nếu bạn là AI agent cài giúp user:** tải `RvtMcp.Setup-*-win-x64.zip` mới nhất và chạy installer bên dưới. Đừng clone/build trừ khi user yêu cầu bản developer. Chi tiết agent: [AGENTS.md](AGENTS.md).
+**Không** tải tag cũ, URL `RvtMcp.Setup-*.zip` cũ, hay `dotnet tool install -g Bimwright.Rvt.Server` / `RvtMcp.Server`.
 
-```powershell
-$tag = (Invoke-RestMethod https://api.github.com/repos/bimwright/rvt-mcp/releases/latest).tag_name
-$zip = "$env:TEMP\RvtMcp.Setup-$tag-win-x64.zip"
-$dir = "$env:TEMP\RvtMcp.Setup-$tag-win-x64"
-Invoke-WebRequest "https://github.com/bimwright/rvt-mcp/releases/download/$tag/RvtMcp.Setup-$tag-win-x64.zip" -OutFile $zip
-Expand-Archive $zip -DestinationPath $dir -Force
+**Nếu bạn là AI agent:** dừng. Báo user là chưa có installer công khai. Đừng clone, build, hay cài từ NuGet trừ khi user yêu cầu rõ bản developer. Protocol: [AGENTS.md](AGENTS.md).
 
-powershell -ExecutionPolicy Bypass -File "$dir\install.ps1" -WhatIf   # xem trước
-powershell -ExecutionPolicy Bypass -File "$dir\install.ps1"           # cài
-```
-
-`install.ps1` làm gì:
-
-- Tìm Revit 2022–2027, cài plugin khớp năm
-- Copy server self-contained vào `%LOCALAPPDATA%\RvtMcp\rvt\server\<version>\`
-- Nối MCP client đã có bằng đường dẫn tuyệt đối (`-Client codex|opencode|claude|kilo|none` để ghi đè)
-
-Chỉ một năm Revit?  
-`install.ps1 -Years 2024`
+Trong lúc chờ GitHub Release mới, cách cài được hỗ trợ là build từ source (mục Cài developer bên dưới).
 
 AutoCAD: dùng [dwg-mcp](https://github.com/bimwright/dwg-mcp) riêng — product khác, cài riêng.
 
@@ -84,11 +68,15 @@ Gỡ plugin, server self-contained, entry client, discovery, log, cache ToolBake
 ### Cài developer
 
 ```powershell
-dotnet tool install -g RvtMcp.Server
+git clone https://github.com/bimwright/rvt-mcp.git
+cd rvt-mcp
+dotnet build src/RvtMcp.sln -c Debug
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -SourceDir . -Client none
 ```
 
-Dành khi dev trên source. Máy Revit hàng ngày nên dùng setup ZIP.
+Đóng hết Revit trước — build sẽ deploy DLL plugin vào `%APPDATA%\Autodesk\Revit\Addins\<year>\RvtMcp\`. `install.ps1` tìm Revit 2022–2027, copy server vào `%LOCALAPPDATA%\RvtMcp\rvt\server\<version>\`, và nối MCP client đã có (`-Client codex|opencode|claude|kilo|none`, `-Years 2024` nếu chỉ một năm).
+
+Đừng `dotnet tool install` `RvtMcp.Server` hay `Bimwright.Rvt.Server` — đó không còn là đường cài hiện tại.
 
 ### Migration từ `Bimwright.Rvt.*` (v0.3 trở về trước)
 
@@ -96,7 +84,7 @@ v0.4+ đổi package/folder sang `RvtMcp.*` (repo và brand bimwright giữ nguy
 
 1. Đóng hết Revit.
 2. `pwsh scripts/uninstall-old.ps1` — xóa plugin cũ `%APPDATA%\…\Bimwright\` và server root cũ; giữ bake/journal user, migrate sang `%LOCALAPPDATA%\RvtMcp\` lần chạy mới đầu.
-3. Cài bản release hiện tại (setup ZIP ở trên, hoặc `dotnet tool install -g RvtMcp.Server`).
+3. Cài từ source (Cài developer ở trên). Chờ ZIP GitHub Release v0.6.0; đừng cài package đã phát hành cũ.
 4. MCP client dùng entry **`rvt-mcp`** (entry cũ theo năm `bimwright-rvt-r22`… bị installer gỡ).
 
 ---

@@ -23,31 +23,15 @@
 
 ---
 
-## 安装（推荐）
+## 安装
 
-已安装 Revit 的机器：从 [GitHub Releases](https://github.com/bimwright/rvt-mcp/releases/latest) 使用 **setup ZIP**。**不需要** .NET SDK、NuGet 全局工具或克隆本仓库。
+**目前没有已发布的 setup ZIP。** GitHub Releases 已撤下，因此不再提供 v0.5.0 及更早版本的下载。v0.6.0 客户端 ZIP 尚未发布。
 
-**若你是代用户安装的 AI agent：** 下载最新 `RvtMcp.Setup-*-win-x64.zip` 并运行下方安装程序。除非用户明确要求开发者安装，否则不要 clone/build。Agent 说明见 [AGENTS.md](AGENTS.md)。
+**不要**下载旧 tag、旧的 `RvtMcp.Setup-*.zip` URL，或执行 `dotnet tool install -g Bimwright.Rvt.Server` / `RvtMcp.Server`。
 
-```powershell
-$tag = (Invoke-RestMethod https://api.github.com/repos/bimwright/rvt-mcp/releases/latest).tag_name
-$zip = "$env:TEMP\RvtMcp.Setup-$tag-win-x64.zip"
-$dir = "$env:TEMP\RvtMcp.Setup-$tag-win-x64"
-Invoke-WebRequest "https://github.com/bimwright/rvt-mcp/releases/download/$tag/RvtMcp.Setup-$tag-win-x64.zip" -OutFile $zip
-Expand-Archive $zip -DestinationPath $dir -Force
+**若你是 AI agent：** 停止。告知用户目前没有公开安装包。除非用户明确要求开发者安装，否则不要 clone、build 或从 NuGet 安装。协议见 [AGENTS.md](AGENTS.md)。
 
-powershell -ExecutionPolicy Bypass -File "$dir\install.ps1" -WhatIf   # 预览
-powershell -ExecutionPolicy Bypass -File "$dir\install.ps1"           # 安装
-```
-
-`install.ps1` 会：
-
-- 检测 Revit 2022–2027 并安装对应插件
-- 将自包含 server 复制到 `%LOCALAPPDATA%\RvtMcp\rvt\server\<version>\`
-- 用绝对路径写入已检测到的 MCP 客户端（可用 `-Client codex|opencode|claude|kilo|none` 覆盖）
-
-只要某一年？  
-`install.ps1 -Years 2024`
+在新的 GitHub Release 发布之前，唯一受支持的安装方式是从源码构建（见下方开发者安装）。
 
 AutoCAD 请用独立的 [dwg-mcp](https://github.com/bimwright/dwg-mcp) — 不同产品、不同安装。
 
@@ -84,11 +68,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-all.ps1 -Yes
 ### 开发者安装
 
 ```powershell
-dotnet tool install -g RvtMcp.Server
+git clone https://github.com/bimwright/rvt-mcp.git
+cd rvt-mcp
+dotnet build src/RvtMcp.sln -c Debug
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -SourceDir . -Client none
 ```
 
-适合改源码。日常 Revit 机请用 setup ZIP。
+请先关闭所有 Revit — 构建会把插件 DLL 部署到 `%APPDATA%\Autodesk\Revit\Addins\<year>\RvtMcp\`。`install.ps1` 会检测 Revit 2022–2027，将 server 复制到 `%LOCALAPPDATA%\RvtMcp\rvt\server\<version>\`，并写入已检测到的 MCP 客户端（`-Client codex|opencode|claude|kilo|none`，只要一年可用 `-Years 2024`）。
+
+不要对 `RvtMcp.Server` 或 `Bimwright.Rvt.Server` 执行 `dotnet tool install` — 那不是当前安装路径。
 
 ### 从 `Bimwright.Rvt.*`（v0.3 及更早）迁移
 
@@ -96,7 +84,7 @@ v0.4+ 将包名/目录改为 `RvtMcp.*`（仓库与品牌仍为 bimwright）。
 
 1. 关闭所有 Revit。
 2. `pwsh scripts/uninstall-old.ps1` — 删除旧 `%APPDATA%\…\Bimwright\` 插件与旧 server 根；保留用户 bake/journal，首次启动新版本时迁到 `%LOCALAPPDATA%\RvtMcp\`。
-3. 安装当前 release（上方 setup ZIP，或 `dotnet tool install -g RvtMcp.Server`）。
+3. 从源码安装（上方开发者安装）。等待 v0.6.0 GitHub Release ZIP，不要安装任何更早的已发布包。
 4. MCP 客户端入口名为 **`rvt-mcp`**（旧的按年 `bimwright-rvt-r22`… 条目由安装程序移除）。
 
 ---
