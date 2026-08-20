@@ -39,5 +39,24 @@ namespace RvtMcp.Tests
             var warning = ResponseSizeGuard.CheckResponse("some_command", payload, topLevelKeyCount: 1, thresholdBytes: 40);
             Assert.NotNull(warning);
         }
+
+        [Fact]
+        public void Evaluate_under_max_is_not_rejected()
+        {
+            var payload = new string('x', 100 * 1024 + 1);
+            var decision = ResponseSizeGuard.Evaluate("ai_element_filter", payload, topLevelKeyCount: 2);
+            Assert.False(decision.Reject);
+            Assert.NotNull(decision.Warning);
+        }
+
+        [Fact]
+        public void Evaluate_above_max_is_rejected_without_returning_payload_hint_over_cap()
+        {
+            var payload = new string('x', ResponseSizeGuard.MaxResponseBytes + 1);
+            var decision = ResponseSizeGuard.Evaluate("clash_detection", payload, topLevelKeyCount: 8);
+            Assert.True(decision.Reject);
+            Assert.Contains("clash_detection", decision.RejectError);
+            Assert.Contains("Do not retry", decision.RejectError);
+        }
     }
 }

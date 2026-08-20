@@ -38,6 +38,9 @@ namespace RvtMcp.Plugin.Handlers
             if (commandsArr == null || commandsArr.Count == 0)
                 return CommandResult.Fail("'commands' must be a non-empty array.");
 
+            if (commandsArr.Count > BatchExecutor.MaxCommands)
+                return CommandResult.Fail(BatchExecutor.TooManyCommandsMessage(commandsArr.Count));
+
             var continueOnError = request.Value<bool?>("continueOnError") ?? false;
 
             using (var tg = new TransactionGroup(doc, "MCP: batch_execute"))

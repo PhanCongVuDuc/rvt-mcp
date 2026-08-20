@@ -134,14 +134,11 @@ typed が合わないとき：
 revit_send_code_to_revit   # C# 本体、プラグイン内でコンパイル実行
 ```
 
-このツールは既定オン（toolset `toolbaker`）。モデル内コンパイルを嫌うなら `--read-only` または `--disable-toolbaker`。
+このツールは既定オン（toolset `meta`）。モデル内コンパイルを嫌うなら `--read-only` または `--disable-toolbaker`。
 
 ### ToolBaker（任意）
 
-既定で使えるもの：
-
-- `revit_send_code_to_revit`
-- 以前 accept した `revit_list_baked_tools` / `revit_run_baked_tool`
+既定面には `revit_send_code_to_revit` がある。`revit_list_baked_tools` / `revit_run_baked_tool` は `--toolsets toolbaker`（または `--toolsets all`）が必要。
 
 **Adaptive bake**（usage から新ツール提案）は明示するまで**オフ**。オンにすると `revit_list_bake_suggestions` に繰り返しパターンが出ることがあり、accept/dismiss はあなたが決める。accept なしではリボンに勝手に載りません。
 
@@ -181,45 +178,44 @@ MCP client (stdio)
 
 | モード | Tools | 注記 |
 |--------|------:|------|
-| 既定 | **220** | 既定オン toolset すべて；**`modify` と `delete` はオフ** |
-| `--toolsets all` | **227** | `modify` + `delete` を追加 |
+| 既定 | **40** | `query` + `create` + `view` + `meta` |
+| `--toolsets all` | **227** | フルカタログ |
 | `all` + adaptive bake | **230** | 提案ライフサイクル 3 ツールを追加 |
 
 MCP 名は `revit_*`。server↔plugin ワイヤ名はプレフィックスなし snake_case。
 
-**既定オン toolset：**  
-`query`, `create`, `view`, `schedule`, `families`, `mep`, `graphics`, `export`, `toolbaker`, `meta`, `lint`, `sheets`, `materials`, `geometry`, `annotation`, `rooms`, `links`, `parameters`, `organization`, `workflows`, `structural`, `kei`
+**既定オン toolset：** `query`, `create`, `view`, `meta`
 
-**明示するまでオフ：** `modify`, `delete`  
+**明示するまでオフ：** それ以外すべて（`export`、`geometry`、`mep`、`structural`、`toolbaker`、`modify`、`delete` など）。  
 例：`--toolsets query,view,meta` または `--toolsets all`。  
-`--read-only` は書き込み可能な toolset をすべて落とします。
+`--read-only` は書き込み可能な toolset をすべて落とします（`create` 含む）。
 
 | Toolset | 範囲 | 既定 |
 |---------|------|------|
 | `query` | ビュー、選択、フィルタ、統計、パラメータ、関係、ワークセット、グループ/アセンブリ | on |
 | `create` | 通り芯、レベル、部屋、線/点/面要素、グループ | on |
 | `view` | ビュー作成、シート配置補助、キャプチャ、クロップ/縮尺 | on |
-| `meta` | バッチ、複数 Revit、プロジェクト情報、purge（MVP）、メッセージ | on |
-| `lint` | ビュー命名、firm-profile、警告サマリ | on |
-| `schedule` | 集計表 list/作成、フィールド、式、データ | on |
-| `families` | ロード/アンロード、タイプ、インスタンス、監査、`.rfa` エクスポート（プロジェクト側） | on |
+| `meta` | バッチ（最大 20）、複数 Revit、プロジェクト情報、purge（MVP）、メッセージ、send_code | on |
+| `lint` | ビュー命名、firm-profile、警告サマリ | off |
+| `schedule` | 集計表 list/作成、フィールド、式、データ | off |
+| `families` | ロード/アンロード、タイプ、インスタンス、監査、`.rfa` エクスポート（プロジェクト側） | off |
 | `modify` | 操作/着色、パラメータ、タイプ変更、ワークセット | off |
 | `delete` | id 削除 | off |
-| `annotation` | タグ、文字、寸法、塗り、キーノート、検査 | on |
-| `export` | PDF/DWG/IFC/NWC、部屋データなど | on |
-| `mep` | システム、コネクタ、ネットワーク、端末配置など | on |
-| `graphics` | ビューフィルタ、オーバーライド、可視/フェーズ | on |
-| `toolbaker` | send_code、list/run baked；adaptive 時のみ提案ツール | on |
-| `sheets` | シート、タイトルブロック、リビジョン、番号変更 | on |
-| `materials` | マテリアル、外観、割当、拾い | on |
-| `geometry` | BBox、測距、干渉、体積/面積… | on |
-| `rooms` | 部屋/面積/スペース、仕上、セパレータ | on |
-| `links` | Revit/CAD リンク、座標 | on |
-| `parameters` | プロジェクト/共有パラメータ | on |
-| `organization` | 保存選択、ビューテンプレート | on |
-| `workflows` | 干渉/監査/シート/拾い系の複合 | on |
-| `structural` | 柱梁基礎、鉄筋、荷重… | on |
-| `kei` | KEI プロジェクト DB、SQLite 照会/書き込み（WAL 安全）、設備インポート | on |
+| `annotation` | タグ、文字、寸法、塗り、キーノート、検査 | off |
+| `export` | PDF/DWG/IFC/NWC、部屋データなど | off |
+| `mep` | システム、コネクタ、ネットワーク、端末配置など | off |
+| `graphics` | ビューフィルタ、オーバーライド、可視/フェーズ | off |
+| `toolbaker` | list/run baked；adaptive 時のみ提案ツール | off |
+| `sheets` | シート、タイトルブロック、リビジョン、番号変更 | off |
+| `materials` | マテリアル、外観、割当、拾い | off |
+| `geometry` | BBox、測距、干渉、体積/面積… | off |
+| `rooms` | 部屋/面積/スペース、仕上、セパレータ | off |
+| `links` | Revit/CAD リンク、座標 | off |
+| `parameters` | プロジェクト/共有パラメータ | off |
+| `organization` | 保存選択、ビューテンプレート | off |
+| `workflows` | 干渉/監査/シート/拾い系の複合 | off |
+| `structural` | 柱梁基礎、鉄筋、荷重… | off |
+| `kei` | KEI プロジェクト DB、SQLite 照会/書き込み（WAL 安全）、設備インポート | off |
 
 ### 代表ツール
 
@@ -356,7 +352,7 @@ pwsh scripts/stage-plugin-zip.ps1 -Config Release
 | [ARCHITECTURE.md](ARCHITECTURE.md) | プロセス、転送、DTO 規約 |
 | [docs/bake.md](docs/bake.md) | Adaptive bake と本体プライバシー |
 | [docs/roadmap.md](docs/roadmap.md) | 直近の hardening と non-goals |
-| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | KEI SQLite ツール（既定オン `kei`） |
+| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | KEI SQLite ツール（`--toolsets kei`） |
 | [CHANGELOG.md](CHANGELOG.md) | リリースノート |
 
 ---

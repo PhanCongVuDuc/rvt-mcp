@@ -8,11 +8,18 @@
 - **Opt-in `send_code` body journal (TTL)** — `persistSendCodeBodies` + `persistSendCodeBodiesUntil` (CLI/env/JSON); plugin writes redacted journal under `%LOCALAPPDATA%\RvtMcp\`.
 - **Capture path UX** — clearer allowlist errors; optional default output under captures.
 - **Status dialog privacy/bake flags** — ribbon **Status** lists toast, ToolBaker, adaptive bake, body cache, and persist journal (read-only snapshot for operators). Unit-tested via `StatusPrivacySection`.
-- **Toolset `kei` (default on)** — `revit_get_active_project_db`, `revit_query_kei_database`, `revit_write_kei_database`, `revit_import_project_equipment` for WAL-safe KEI project SQLite through the Revit process. See `docs/kei-equipment-import.md`.
+- **Toolset `kei`** — `revit_get_active_project_db`, `revit_query_kei_database`, `revit_write_kei_database`, `revit_import_project_equipment` for WAL-safe KEI project SQLite through the Revit process. Enable with `--toolsets kei` (or `--toolsets all`). See `docs/kei-equipment-import.md`.
+
+### Changed
+
+- **Default toolsets narrowed** to `query`, `create`, `view`, `meta` (**40** tools) so weak models are not flooded with the full catalog. Clash, export, MEP, structural, ToolBaker, and the rest stay available via `--toolsets all` or an explicit CSV.
+- **`batch_execute` capped at 20** sub-commands (plugin + server fail-fast).
+- **Wire responses over 1 MiB are rejected** (100 KB still logs an S4 warning). Narrow filters/`max_results` instead of retrying the same dump.
+- **60s request timeout completes the plugin TCS** so a late handler result cannot ride the next UI tick. Clash/export tool descriptions tell agents not to retry after timeout.
 
 ### Docs
 
-- English README rewritten (human tone); vi / zh-CN / ja ports aligned. Tool counts: default **220**, `--toolsets all` **227**, adaptive **230**.
+- English README rewritten (human tone); vi / zh-CN / ja ports aligned. Tool counts: default **40** (`query,create,view,meta`), `--toolsets all` **227**, adaptive **230**.
 - Product close-out notes under `docs/analysis/` (send_code for out-of-scope work; no Python host / Viewer / Family Editor suite this cycle).
 - `docs/roadmap.md` non-goals updated.
 

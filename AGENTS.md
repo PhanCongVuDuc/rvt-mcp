@@ -256,7 +256,7 @@ gemini mcp add rvt-mcp "%LOCALAPPDATA%\RvtMcp\rvt\server\<version>\rvt-mcp.exe"
 
 ## Step 4 — Verify
 
-1. **List tools.** Ask the host to call `tools/list` against the wired server. Expect at minimum: `get_current_view_info`, `analyze_model_statistics`, `batch_execute`, plus whatever toolsets the user enabled.
+1. **List tools.** Ask the host to call `tools/list` against the wired server. Default toolsets are `query,create,view,meta` — expect `revit_get_current_view_info`, `revit_batch_execute`, and `revit_send_code_to_revit`. Clash/export/MEP need `--toolsets all` (or an explicit CSV).
 
 2. **Handshake call.** With Revit 2022–2027 running and a model open, call `get_current_view_info` with no args. A valid response looks like:
 
@@ -318,6 +318,6 @@ For anything not in this table, open an issue at <https://github.com/bimwright/r
 
 ## Honest scope
 
-rvt-mcp handles `get_current_view_info`, `analyze_model_statistics`, `batch_execute`, and 220+ other tools across Revit 2022–2027. It does not handle installing Revit, licensing, cloud sync, or any Autodesk account operations. If the user asks for those, point them at <https://www.autodesk.com/support/revit>.
+rvt-mcp handles `revit_get_current_view_info`, `revit_batch_execute`, `revit_send_code_to_revit`, and 220+ other tools across Revit 2022–2027 when started with `--toolsets all`. The default surface is `query` + `create` + `view` + `meta` only. It does not handle installing Revit, licensing, cloud sync, or any Autodesk account operations. If the user asks for those, point them at <https://www.autodesk.com/support/revit>.
 
 For extending the tool surface at runtime, see ToolBaker in the main [README.md](README.md).

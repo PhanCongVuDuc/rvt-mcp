@@ -22,9 +22,7 @@ namespace RvtMcp.Server
 
         public static readonly string[] DefaultOn =
         {
-            "query", "create", "view", "schedule", "families", "mep", "graphics", "export", "toolbaker", "meta", "lint",
-            "sheets", "materials", "geometry", "annotation", "rooms", "links", "parameters", "organization", "workflows",
-            "structural", "kei"
+            "query", "create", "view", "meta"
         };
 
         public static readonly string[] WriteCapable =

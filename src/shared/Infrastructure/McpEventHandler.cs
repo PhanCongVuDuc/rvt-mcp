@@ -96,7 +96,7 @@ namespace RvtMcp.Plugin
                         {
                             App.DebugLog("McpToastNotifier.OnCompleted failed (unknown command): " + toastEx.Message);
                         }
-                        continue;
+                        break;
                     }
 
                     // S6 strict schema validation — fail fast with error-as-teacher envelope
@@ -141,7 +141,7 @@ namespace RvtMcp.Plugin
                         {
                             App.DebugLog("McpToastNotifier.OnCompleted failed (validation): " + toastEx.Message);
                         }
-                        continue;
+                        break;
                     }
 
                     var result = command.Execute(app, request.ParamsJson);
@@ -199,13 +199,20 @@ namespace RvtMcp.Plugin
                         error = resultError
                     });
 
-                    var sizeWarning = ResponseSizeGuard.CheckResponse(
+                    var size = ResponseSizeGuard.Evaluate(
                         commandName: request.CommandName,
                         serializedPayload: response,
                         topLevelKeyCount: (result.Data as Newtonsoft.Json.Linq.JObject)?.Count ?? 0);
-                    if (sizeWarning != null)
+                    if (size.Warning != null)
+                        Console.Error.WriteLine(size.Warning);
+                    if (size.Reject)
                     {
-                        Console.Error.WriteLine(sizeWarning);
+                        response = JsonConvert.SerializeObject(new
+                        {
+                            id = request.Id,
+                            success = false,
+                            error = size.RejectError
+                        });
                     }
 
                     request.Tcs.TrySetResult(response);
@@ -274,6 +281,14 @@ namespace RvtMcp.Plugin
                         App.DebugLog("McpToastNotifier.OnCompleted failed (exception path): " + toastEx.Message);
                     }
                 }
+
+                break;
+            }
+
+            if (!_queue.IsEmpty)
+            {
+                try { App.Instance?.ExternalEvent?.Raise(); }
+                catch { }
             }
         }
 

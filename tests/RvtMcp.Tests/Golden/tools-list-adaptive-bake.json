@@ -532,7 +532,7 @@
     },
     {
       "name": "revit_batch_execute",
-      "description_hash": "sha256:138fdd070a88768b8d0c7c97a187f6644388e0188bf9136084babf9c59420d84",
+      "description_hash": "sha256:3a58361f599e92b371e8b5feba16d40fb4724afa9fdeb131bf49d6fcfbc7e369",
       "inputSchema": {
         "properties": {
           "commands": {
@@ -552,7 +552,7 @@
     },
     {
       "name": "revit_batch_export_sheets",
-      "description_hash": "sha256:b57948e0090d0ac697662047192e25a2d4b2d085ce628c939e62963b9d3c1ad8",
+      "description_hash": "sha256:76dbca11418476dfd1b8a5efbb1a64ba642a3208934a8483b3cb7c61b9092751",
       "inputSchema": {
         "properties": {
           "format": {
@@ -665,7 +665,7 @@
     },
     {
       "name": "revit_clash_detection",
-      "description_hash": "sha256:537fbd517b15034be7dae82bbf0a219a9a5c1a907d6a5530552966b17f50a6fb",
+      "description_hash": "sha256:4e489c9b1f115d05828589b3e6f048d796b3bc8c33347e18b8308b9b0d0bae9c",
       "inputSchema": {
         "properties": {
           "categoriesA": {
@@ -2614,7 +2614,7 @@
     },
     {
       "name": "revit_export_dgn",
-      "description_hash": "sha256:3850c2f3a040964effbaf96f129b7054a0770b8ce13f036fbe896fa657a08930",
+      "description_hash": "sha256:edd107717417cf9127aca95cf949389122cedbde2777d6c1a12648fbcc6e7db9",
       "inputSchema": {
         "properties": {
           "fileNamePrefix": {
@@ -2638,7 +2638,7 @@
     },
     {
       "name": "revit_export_dwf",
-      "description_hash": "sha256:3b7831a4446e8b9f2594d048ea0ca715818900d77e551875d35dc64c7c01906d",
+      "description_hash": "sha256:36ce771527fce27079e3534621e5d041ee2f0cc8e4d9c21ea82884cebd045047",
       "inputSchema": {
         "properties": {
           "fileName": {
@@ -2666,7 +2666,7 @@
     },
     {
       "name": "revit_export_dwg",
-      "description_hash": "sha256:87ee0ca37faa652a6aa116f675e2dc03aead3fcd4686594a6e7850e7a4ee001f",
+      "description_hash": "sha256:277cff393471b6a83cb6c4312c2a669a50fd136025fece53af7779e0a50c20b7",
       "inputSchema": {
         "properties": {
           "fileNamePrefix": {
@@ -2776,7 +2776,7 @@
     },
     {
       "name": "revit_export_gbxml",
-      "description_hash": "sha256:4057f34c0578f24da49e9b1003dedb5c46e06e5649fb92aea2c8edb5b0c389e8",
+      "description_hash": "sha256:fc994b4805e4e2c7e107568446c55a59e9e9bfd6e01741b89cfb5b106770ed3d",
       "inputSchema": {
         "properties": {
           "fileName": {
@@ -2797,7 +2797,7 @@
     },
     {
       "name": "revit_export_ifc",
-      "description_hash": "sha256:de63cb604ea2c9b90ed47e2e9e2761f1c7591c73c45c881da01b9f7f1751a82a",
+      "description_hash": "sha256:cda2c24a9ce113d490ecaba3edbe0f2e900b355668b48b1eea9a7d5e4375d380",
       "inputSchema": {
         "properties": {
           "fileName": {
@@ -2850,7 +2850,7 @@
     },
     {
       "name": "revit_export_nwc",
-      "description_hash": "sha256:a0e760bab61476f689475ee82b4299775ed6224dc4d59960ae02862d940313d7",
+      "description_hash": "sha256:a1e3b40c8bfc90409749cd1a272fa3d3bd210416b0e59b8db8596eecfbdcc235",
       "inputSchema": {
         "properties": {
           "exportScopeViewId": {
@@ -2875,7 +2875,7 @@
     },
     {
       "name": "revit_export_pdf",
-      "description_hash": "sha256:d8ec163cf73b780c2910cd0443f5873f39bcdb714f5cb638367c7ce45fad02cb",
+      "description_hash": "sha256:8f363692ed68e1883885b2fa47c3ea8138799dde777a475d2b0a60c51fa1cb79",
       "inputSchema": {
         "properties": {
           "combine": {

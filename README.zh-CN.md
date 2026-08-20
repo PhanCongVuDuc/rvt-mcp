@@ -134,14 +134,11 @@ Agent 改善了前半段（描述任务、当场试）。它们不会消掉 tran
 revit_send_code_to_revit   # C# 正文，在插件内编译执行
 ```
 
-该工具默认开启（toolset `toolbaker`）。若不希望 agent 在模型里编译代码，用 `--read-only` 或 `--disable-toolbaker` 关掉。
+该工具默认开启（toolset `meta`）。若不希望 agent 在模型里编译代码，用 `--read-only` 或 `--disable-toolbaker` 关掉。
 
 ### ToolBaker（可选）
 
-默认已有：
-
-- `revit_send_code_to_revit`
-- 已 accept 工具的 `revit_list_baked_tools` / `revit_run_baked_tool`
+默认表面含 `revit_send_code_to_revit`。`revit_list_baked_tools` / `revit_run_baked_tool` 需要 `--toolsets toolbaker`（或 `--toolsets all`）。
 
 **Adaptive bake**（从 usage 建议新工具）默认**关闭**。开启后，重复模式可出现在 `revit_list_bake_suggestions`；需你显式 accept/dismiss。未 accept 不会自己上 ribbon。
 
@@ -181,45 +178,44 @@ Handler 只返回普通 DTO — 线上不传活的 Revit 对象。
 
 | 模式 | Tools | 说明 |
 |------|------:|------|
-| 默认 | **220** | 全部 default-on toolset；**`modify` 与 `delete` 关** |
-| `--toolsets all` | **227** | 加上 `modify` + `delete` |
+| 默认 | **40** | `query` + `create` + `view` + `meta` |
+| `--toolsets all` | **227** | 完整目录 |
 | `all` + adaptive bake | **230** | 再加 3 个 suggestion 生命周期工具 |
 
 MCP 名：`revit_*`。server↔plugin 线名：无前缀 snake_case。
 
-**默认开启 toolset：**  
-`query`, `create`, `view`, `schedule`, `families`, `mep`, `graphics`, `export`, `toolbaker`, `meta`, `lint`, `sheets`, `materials`, `geometry`, `annotation`, `rooms`, `links`, `parameters`, `organization`, `workflows`, `structural`, `kei`
+**默认开启 toolset：** `query`, `create`, `view`, `meta`
 
-**除非显式开启否则关闭：** `modify`, `delete`  
+**除非显式开启否则关闭：** 其余全部（`export`、`geometry`、`mep`、`structural`、`toolbaker`、`modify`、`delete` 等）。  
 例：`--toolsets query,view,meta` 或 `--toolsets all`。  
-`--read-only` 去掉所有可写 toolset。
+`--read-only` 去掉所有可写 toolset（含 `create`）。
 
 | Toolset | 覆盖 | 默认 |
 |---------|------|------|
 | `query` | 视图、选择、过滤、统计、参数、关系、workset、组/程序集 | on |
 | `create` | 轴网、标高、房间、线/点/面构件、组 | on |
 | `view` | 建视图、图纸布局辅助、截图、裁剪/比例 | on |
-| `meta` | 批处理、多 Revit 目标、项目信息、purge（MVP）、消息 | on |
-| `lint` | 视图命名、firm-profile、警告摘要 | on |
-| `schedule` | 明细表 list/创建、字段、公式、数据 | on |
-| `families` | 加载/卸载、类型、实例、审计、导出 `.rfa`（项目侧） | on |
+| `meta` | 批处理（最多 20）、多 Revit 目标、项目信息、purge（MVP）、消息、send_code | on |
+| `lint` | 视图命名、firm-profile、警告摘要 | off |
+| `schedule` | 明细表 list/创建、字段、公式、数据 | off |
+| `families` | 加载/卸载、类型、实例、审计、导出 `.rfa`（项目侧） | off |
 | `modify` | 操作/着色、写参数、换类型、workset | off |
 | `delete` | 按 id 删除 | off |
-| `annotation` | 标记、文字、尺寸、填充、keynote、检查 | on |
-| `export` | PDF/DWG/IFC/NWC、房间数据及相关导出 | on |
-| `mep` | 系统、连接件、网络、风口灯具等 | on |
-| `graphics` | 视图过滤器、覆盖、可见性/阶段 | on |
-| `toolbaker` | send_code、list/run baked；adaptive 开才有 suggestion 工具 | on |
-| `sheets` | 图纸、图框、修订、重编号 | on |
-| `materials` | 材质、外观、赋值、提量 | on |
-| `geometry` | 包围盒、测量、碰撞、体积/面积… | on |
-| `rooms` | 房间/面积/空间、装修、分隔 | on |
-| `links` | Revit/CAD 链接、坐标 | on |
-| `parameters` | 项目/共享参数 | on |
-| `organization` | 保存选择、视图样板 | on |
-| `workflows` | 碰撞/审计/图纸/提量类组合流 | on |
-| `structural` | 柱梁基础、钢筋、荷载… | on |
-| `kei` | KEI 项目 SQLite 路径、查询/写入（WAL 安全）、设备导入 | on |
+| `annotation` | 标记、文字、尺寸、填充、keynote、检查 | off |
+| `export` | PDF/DWG/IFC/NWC、房间数据及相关导出 | off |
+| `mep` | 系统、连接件、网络、风口灯具等 | off |
+| `graphics` | 视图过滤器、覆盖、可见性/阶段 | off |
+| `toolbaker` | list/run baked；adaptive 开才有 suggestion 工具 | off |
+| `sheets` | 图纸、图框、修订、重编号 | off |
+| `materials` | 材质、外观、赋值、提量 | off |
+| `rooms` | 房间/面积/空间、装修、分隔 | off |
+| `links` | Revit/CAD 链接、坐标 | off |
+| `parameters` | 项目/共享参数 | off |
+| `organization` | 保存选择、视图样板 | off |
+| `workflows` | 碰撞/审计/图纸/提量类组合流 | off |
+| `structural` | 柱梁基础、钢筋、荷载… | off |
+| `kei` | KEI 项目 SQLite 路径、查询/写入（WAL 安全）、设备导入 | off |
+| `geometry` | 包围盒、测量、碰撞、体积/面积… | off |
 
 ### 代表性工具
 
@@ -356,7 +352,7 @@ pwsh scripts/stage-plugin-zip.ps1 -Config Release
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 进程、传输、DTO 规则 |
 | [docs/bake.md](docs/bake.md) | Adaptive bake 与正文隐私 |
 | [docs/roadmap.md](docs/roadmap.md) | 近期加固与 non-goals |
-| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | KEI SQLite 工具（默认开启的 `kei` toolset） |
+| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | KEI SQLite 工具（`--toolsets kei`） |
 | [CHANGELOG.md](CHANGELOG.md) | 发布说明 |
 
 ---

@@ -122,11 +122,45 @@ namespace RvtMcp.Tests
             var captured = CaptureToolsList(new RvtMcpConfig());
 
             Assert.Contains("\"name\": \"revit_send_code_to_revit\"", captured);
-            Assert.Contains("\"name\": \"revit_list_baked_tools\"", captured);
-            Assert.Contains("\"name\": \"revit_run_baked_tool\"", captured);
+            Assert.Contains("\"name\": \"revit_batch_execute\"", captured);
+            Assert.DoesNotContain("\"name\": \"revit_list_baked_tools\"", captured);
+            Assert.DoesNotContain("\"name\": \"revit_run_baked_tool\"", captured);
+            Assert.DoesNotContain("\"name\": \"revit_clash_detection\"", captured);
+            Assert.DoesNotContain("\"name\": \"revit_export_pdf\"", captured);
             Assert.DoesNotContain("\"name\": \"revit_list_bake_suggestions\"", captured);
             Assert.DoesNotContain("\"name\": \"revit_accept_bake_suggestion\"", captured);
             Assert.DoesNotContain("\"name\": \"revit_dismiss_bake_suggestion\"", captured);
+
+            var count = (int)Newtonsoft.Json.Linq.JObject.Parse(captured)["tool_count"]!;
+            Assert.Equal(40, count);
+        }
+
+        [Fact]
+        public void Read_only_defaults_hide_send_code()
+        {
+            var captured = CaptureToolsList(new RvtMcpConfig { ReadOnly = true });
+            Assert.DoesNotContain("\"name\": \"revit_send_code_to_revit\"", captured);
+            Assert.Contains("\"name\": \"revit_list_available_targets\"", captured);
+        }
+
+        [Fact]
+        public void Disable_toolbaker_hides_send_code_even_with_meta()
+        {
+            var captured = CaptureToolsList(new RvtMcpConfig { EnableToolbaker = false });
+            Assert.DoesNotContain("\"name\": \"revit_send_code_to_revit\"", captured);
+            Assert.Contains("\"name\": \"revit_batch_execute\"", captured);
+        }
+
+        [Fact]
+        public void Server_instructions_stay_under_2048_utf8_bytes()
+        {
+            var programType = typeof(RvtMcp.Server.ToolsetFilter).Assembly.GetType("RvtMcp.Server.Program")!;
+            var field = programType.GetField("ServerInstructionsText",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            Assert.NotNull(field);
+            var text = (string)(field!.GetRawConstantValue() ?? field.GetValue(null)!);
+            var bytes = System.Text.Encoding.UTF8.GetByteCount(text);
+            Assert.True(bytes <= 2048, $"ServerInstructionsText is {bytes} UTF-8 bytes (Anthropic Tool Search cap is 2048).");
         }
 
         [Fact]
