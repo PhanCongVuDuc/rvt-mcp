@@ -10,7 +10,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "color_elements";
         public string Description => "Color elements based on a parameter value";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""category"":{""type"":""string""},""parameterName"":{""type"":""string""}},""required"":[""category"",""parameterName""]}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""category"":{""type"":""string""},""parameterName"":{""type"":""string""},""max_groups"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":500}},""required"":[""category"",""parameterName""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -21,6 +21,9 @@ namespace RvtMcp.Plugin.Handlers
             var request = JObject.Parse(paramsJson);
             var category = request.Value<string>("category");
             var paramName = request.Value<string>("parameterName");
+            var maxGroups = request.Value<int?>("max_groups") ?? 100;
+            if (maxGroups < 1 || maxGroups > 500)
+                return CommandResult.Fail("max_groups must be between 1 and the hard maximum of 500.");
 
             if (string.IsNullOrEmpty(category) || string.IsNullOrEmpty(paramName))
                 return CommandResult.Fail("category and parameterName are required.");
@@ -100,9 +103,17 @@ namespace RvtMcp.Plugin.Handlers
                 value = g.Key,
                 count = g.Count(),
                 color = $"RGB({colors[i % colors.Length].Red},{colors[i % colors.Length].Green},{colors[i % colors.Length].Blue})"
-            }).ToArray();
+            }).Take(maxGroups).ToArray();
 
-            return CommandResult.Ok(new { coloredCount, groups = summary });
+            return CommandResult.Ok(new
+            {
+                success = true,
+                coloredCount,
+                group_count = groups.Count,
+                returned_group_count = summary.Length,
+                groups_truncated = groups.Count > summary.Length,
+                groups = summary
+            });
         }
     }
 }

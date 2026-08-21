@@ -12,7 +12,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "list_rebar";
         public string Description => "List rebar instances. Optionally filter by host_id or view_id. Returns per-rebar: id, bar_type, diameter_mm, quantity, layout_rule, host_id, host_category.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""host_id"":{""type"":""integer""},""view_id"":{""type"":""integer""},""limit"":{""type"":""integer"",""default"":500}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""host_id"":{""type"":""integer""},""view_id"":{""type"":""integer""},""limit"":{""type"":""integer"",""default"":500,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -23,6 +23,8 @@ namespace RvtMcp.Plugin.Handlers
             var hostId = req.Value<long?>("host_id");
             var viewId = req.Value<long?>("view_id");
             var limit = req.Value<int?>("limit") ?? 500;
+            if (limit < 1 || limit > 500)
+                return CommandResult.Fail("limit must be between 1 and the hard maximum of 500.");
 
             FilteredElementCollector collector;
             if (viewId.HasValue)

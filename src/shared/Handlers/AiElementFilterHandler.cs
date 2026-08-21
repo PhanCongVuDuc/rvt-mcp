@@ -10,7 +10,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "ai_element_filter";
         public string Description => "Filter elements by category, parameter name, value, and comparison operator. Numeric values are in millimeters (auto-converted from Revit internal units).";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""category"":{""type"":""string""},""parameterName"":{""type"":""string""},""parameterValue"":{""type"":""string""},""operator"":{""type"":""string"",""enum"":[""equals"",""contains"",""startswith"",""greaterthan"",""lessthan""]},""limit"":{""type"":""integer"",""default"":100},""select"":{""type"":""boolean"",""default"":false}},""required"":[""category""]}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""category"":{""type"":""string""},""parameterName"":{""type"":""string""},""parameterValue"":{""type"":""string""},""operator"":{""type"":""string"",""enum"":[""equals"",""contains"",""startswith"",""greaterthan"",""lessthan""]},""limit"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":1000},""select"":{""type"":""boolean"",""default"":false}},""required"":[""category""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -24,6 +24,8 @@ namespace RvtMcp.Plugin.Handlers
             var paramValue = request.Value<string>("parameterValue");
             var op = request.Value<string>("operator") ?? "equals";
             var limit = request.Value<int?>("limit") ?? 100;
+            if (limit < 1 || limit > 1000)
+                return CommandResult.Fail("limit must be between 1 and the hard maximum of 1000.");
             var selectResult = request.Value<bool?>("select") ?? false;
 
             if (string.IsNullOrEmpty(categoryName))

@@ -14,7 +14,7 @@ namespace RvtMcp.Plugin.Handlers
         public string Description =>
             "Read-only audit of loaded families: detect in-place families, unused families (zero placed instances), duplicate names, and unusual size/type-count hints. Returns recommendations.";
 
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""include_unused"":{""type"":""boolean"",""default"":true},""include_inplace"":{""type"":""boolean"",""default"":true},""include_duplicate_names"":{""type"":""boolean"",""default"":true},""include_high_type_count"":{""type"":""boolean"",""default"":true},""high_type_count_threshold"":{""type"":""integer"",""default"":20,""minimum"":1}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""include_unused"":{""type"":""boolean"",""default"":true},""include_inplace"":{""type"":""boolean"",""default"":true},""include_duplicate_names"":{""type"":""boolean"",""default"":true},""include_high_type_count"":{""type"":""boolean"",""default"":true},""high_type_count_threshold"":{""type"":""integer"",""default"":20,""minimum"":1},""start_index"":{""type"":""integer"",""default"":0,""minimum"":0},""limit_per_section"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -38,6 +38,8 @@ namespace RvtMcp.Plugin.Handlers
             bool includeHighTypeCount = request.Value<bool?>("include_high_type_count") ?? true;
             int highTypeCountThreshold = request.Value<int?>("high_type_count_threshold") ?? 20;
             if (highTypeCountThreshold < 1) highTypeCountThreshold = 1;
+            if (!ResponsePaging.TryParse(request, "start_index", "limit_per_section", 100, 500, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
 
             // Collect loadable + in-place families only (system families are excluded:
             // they are not represented by Family elements).
@@ -243,15 +245,36 @@ namespace RvtMcp.Plugin.Handlers
                 recommendations.Add("No family-level issues detected with current options.");
             }
 
+            var unusedPage = ResponsePaging.Slice(unusedOut, paging.StartIndex, paging.MaxResults);
+            var inplacePage = ResponsePaging.Slice(inplaceOut, paging.StartIndex, paging.MaxResults);
+            var duplicatePage = ResponsePaging.Slice(dupGroupsOut, paging.StartIndex, paging.MaxResults);
+            var highTypePage = ResponsePaging.Slice(highTypeOut, paging.StartIndex, paging.MaxResults);
+            var recommendationPage = ResponsePaging.Slice(recommendations, paging.StartIndex, paging.MaxResults);
+            var nextIndices = new[] { unusedPage.NextIndex, inplacePage.NextIndex, duplicatePage.NextIndex, highTypePage.NextIndex, recommendationPage.NextIndex }
+                .Where(i => i.HasValue).Select(i => i.Value).ToArray();
+
             return CommandResult.Ok(new
             {
                 doc_title = doc.Title ?? string.Empty,
                 total_families_scanned = infos.Count,
-                unused_families = unusedOut.ToArray(),
-                inplace_families = inplaceOut.ToArray(),
-                duplicate_name_groups = dupGroupsOut.ToArray(),
-                high_type_count_families = highTypeOut.ToArray(),
-                recommendations = recommendations.ToArray()
+                start_index = paging.StartIndex,
+                limit_per_section = paging.MaxResults,
+                section_counts = new
+                {
+                    unused = unusedPage.TotalCount,
+                    inplace = inplacePage.TotalCount,
+                    duplicate_name_groups = duplicatePage.TotalCount,
+                    high_type_count = highTypePage.TotalCount,
+                    recommendations = recommendationPage.TotalCount
+                },
+                truncated = unusedPage.Truncated || inplacePage.Truncated || duplicatePage.Truncated
+                    || highTypePage.Truncated || recommendationPage.Truncated,
+                next_index = nextIndices.Length > 0 ? (int?)nextIndices.Max() : null,
+                unused_families = unusedPage.Items,
+                inplace_families = inplacePage.Items,
+                duplicate_name_groups = duplicatePage.Items,
+                high_type_count_families = highTypePage.Items,
+                recommendations = recommendationPage.Items
             });
         }
 

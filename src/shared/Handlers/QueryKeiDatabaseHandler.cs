@@ -15,7 +15,7 @@ namespace RvtMcp.Plugin.Handlers
             "Presets: overview, equipment, schema, categories, list databases.";
 
         public string ParametersSchema =>
-            @"{""type"":""object"",""properties"":{""preset"":{""type"":""string"",""enum"":[""overview"",""equipment"",""schema"",""categories""]},""sql"":{""type"":""string""},""database"":{""type"":""string"",""description"":""auto | list | substring of db filename""},""limit"":{""type"":""integer"",""default"":100}}}";
+            @"{""type"":""object"",""properties"":{""preset"":{""type"":""string"",""enum"":[""overview"",""equipment"",""schema"",""categories""]},""sql"":{""type"":""string""},""database"":{""type"":""string"",""description"":""auto | list | substring of db filename""},""limit"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":1000}}}";
 
         private static readonly Dictionary<string, string> PresetQueries =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -58,6 +58,8 @@ ORDER BY SortOrder"
                 var query = request.Value<string>("sql") ?? "";
                 var database = request.Value<string>("database") ?? "auto";
                 var limit = request.Value<int?>("limit") ?? 100;
+                if (limit < 1 || limit > 1000)
+                    return CommandResult.Fail("limit must be between 1 and the hard maximum of 1000.");
 
                 var folder = KeiDatabaseResolver.GetProjectsFolder();
                 if (!Directory.Exists(folder))
@@ -82,9 +84,10 @@ ORDER BY SortOrder"
                         })
                         .OrderByDescending(x => x.isActive)
                         .ThenByDescending(x => x.lastModified)
+                        .Take(limit)
                         .ToList();
 
-                    return CommandResult.Ok(new { folder, databases = dbs });
+                    return CommandResult.Ok(new { folder, count = dbs.Count, limit, databases = dbs });
                 }
 
                 string dbPath = KeiDatabaseResolver.Resolve(app, database);

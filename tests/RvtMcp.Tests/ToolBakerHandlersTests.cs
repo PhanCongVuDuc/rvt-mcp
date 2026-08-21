@@ -34,6 +34,37 @@ namespace RvtMcp.Tests
             Assert.Null(suggestion["payload_json"]);
         }
 
+        [Fact]
+        public void ListBakeSuggestions_filters_and_pages_with_hard_limit()
+        {
+            using var sandbox = new TempDir();
+            using var db = NewDb(sandbox);
+            db.UpsertSuggestion(Suggestion("s1", "preset:create_level:elevation,name", "preset"));
+            db.UpsertSuggestion(Suggestion("s2", "preset:create_grid:start,end", "preset"));
+            var dismissed = Suggestion("s3", "preset:create_room:x,y", "preset");
+            dismissed.State = "never";
+            db.UpsertSuggestion(dismissed);
+
+            var json = ListBakeSuggestionsHandler.Handle(
+                db,
+                candidates: null,
+                state: "open",
+                startIndex: 0,
+                limit: 1);
+            var root = JObject.Parse(json);
+
+            Assert.Equal(2, (int)root["count"]!);
+            Assert.Equal(1, (int)root["returned_count"]!);
+            Assert.True((bool)root["truncated"]!);
+            Assert.Equal(1, (int)root["next_index"]!);
+            Assert.Throws<ArgumentOutOfRangeException>(() => ListBakeSuggestionsHandler.Handle(
+                db,
+                candidates: null,
+                state: "",
+                startIndex: 0,
+                limit: 501));
+        }
+
         [Theory]
         [InlineData("snooze_30d", "snoozed")]
         [InlineData("never", "never")]

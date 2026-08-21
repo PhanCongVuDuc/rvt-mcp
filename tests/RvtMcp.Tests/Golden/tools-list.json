@@ -175,9 +175,13 @@
     },
     {
       "name": "revit_analyze_sheet_layout",
-      "description_hash": "sha256:6bd6b63d873bcbd84421db72d5e9fc5fada856cd0a76835f8d79748fc5d753ca",
+      "description_hash": "sha256:48c711ed8d256422abc69fe1a8bf1efdabc8bbadc8d1a30410037d1ad68340f8",
       "inputSchema": {
         "properties": {
+          "maxViewports": {
+            "description": "",
+            "type": "Int32"
+          },
           "sheetId": {
             "description": "",
             "type": "Nullable`1"
@@ -185,6 +189,10 @@
           "sheetNumber": {
             "description": "",
             "type": "String"
+          },
+          "startViewport": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [],
@@ -225,9 +233,22 @@
     },
     {
       "name": "revit_analyze_view_naming_patterns",
-      "description_hash": "sha256:40b34c5c7f62e9be906c29ba39fa122eff4315c0772de792a36f088b83051496",
+      "description_hash": "sha256:6be47e60398dc03921e31f3c4b18e11229a2700881d20196aef0338174cb2dc7",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "maxOutliers": {
+            "description": "",
+            "type": "Int32"
+          },
+          "maxPatterns": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startOutlier": {
+            "description": "",
+            "type": "Int32"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -433,7 +454,7 @@
     },
     {
       "name": "revit_audit_families",
-      "description_hash": "sha256:8bd973e4dffb7546f34ffffc60cf105564c41218bf47b30572a5050d484344f9",
+      "description_hash": "sha256:a7033b5600ce5dd974b11e903fc36e99df305c8ba7ce25d6b53d20fa8407da94",
       "inputSchema": {
         "properties": {
           "highTypeCountThreshold": {
@@ -455,6 +476,14 @@
           "includeUnused": {
             "description": "",
             "type": "Boolean"
+          },
+          "limitPerSection": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [],
@@ -691,12 +720,16 @@
     },
     {
       "name": "revit_color_elements",
-      "description_hash": "sha256:db52f2d8520222a997f5917573ee11c86d8ce5a61576c899f6f0bf9087b6985b",
+      "description_hash": "sha256:fb9e4ee7647a306f10723bfd3c077502ee0895490fb508753dec8e084d1eb221",
       "inputSchema": {
         "properties": {
           "category": {
             "description": "",
             "type": "String"
+          },
+          "maxGroups": {
+            "description": "",
+            "type": "Int32"
           },
           "parameterName": {
             "description": "",
@@ -2401,7 +2434,7 @@
     },
     {
       "name": "revit_delete_view_template",
-      "description_hash": "sha256:a226e32dcbd5f394abf4fd62ab6998dc8dd6bb1153e4c7ecbd94838fc24cd0cb",
+      "description_hash": "sha256:bac90ecd9237afe858c6a8ec129abc013092b4d32e09605d1ff6a23526610c80",
       "inputSchema": {
         "properties": {
           "clearFromViews": {
@@ -2411,6 +2444,10 @@
           "dryRun": {
             "description": "",
             "type": "Boolean"
+          },
+          "maxUsedByViews": {
+            "description": "",
+            "type": "Int32"
           },
           "templateId": {
             "description": "",
@@ -2434,12 +2471,20 @@
     },
     {
       "name": "revit_detect_system_elements",
-      "description_hash": "sha256:ac01c29a84b0d2b088dff4e04350ea4ce16af5681d1d14aa5195b1c30685560b",
+      "description_hash": "sha256:ea9018665ae0a8bf4099f0f8cc3ef7a341920c53e4f37133d06166a1faa3157d",
       "inputSchema": {
         "properties": {
           "elementId": {
             "description": "",
             "type": "Int64"
+          },
+          "maxElements": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startElement": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [
@@ -3075,12 +3120,20 @@
     },
     {
       "name": "revit_get_assembly_members",
-      "description_hash": "sha256:63df0f03f5781171618501421f300c7217b5cbca9cd89bd1edc658921ec22bda",
+      "description_hash": "sha256:e5dd53d9fad1c3810fcc69e9a20f2e1c2af690aac8c10b3856cd054850275694",
       "inputSchema": {
         "properties": {
           "assemblyId": {
             "description": "",
             "type": "Int64"
+          },
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [
@@ -3281,12 +3334,20 @@
     },
     {
       "name": "revit_get_group_members",
-      "description_hash": "sha256:0b4ace383366996a4ef2025dbd099373f702f0cf01f8261c3781291cdcd96995",
+      "description_hash": "sha256:ce9b2a7bb98613bb0907e19ff4e2407f866cda6aad9aac710d814f2871a8f67c",
       "inputSchema": {
         "properties": {
           "groupId": {
             "description": "",
             "type": "Int64"
+          },
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [
@@ -3351,12 +3412,24 @@
     },
     {
       "name": "revit_get_material_quantities",
-      "description_hash": "sha256:cf05166d500f139010805e1eed43198af5711ddc14d532dfa2f09ad950051dd0",
+      "description_hash": "sha256:4d9ebfa25ee1cf77935bba7720c3f219574062bd0f2b5c0247239c4eff95d017",
       "inputSchema": {
         "properties": {
           "category": {
             "description": "",
             "type": "String"
+          },
+          "materialNameFilter": {
+            "description": "",
+            "type": "String"
+          },
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [
@@ -3409,7 +3482,7 @@
     },
     {
       "name": "revit_get_model_warnings_summary",
-      "description_hash": "sha256:2fb8d32241ad9d7099d1afbf8bc14a4e5c4ae16e8b2178027116f6575fb9aadb",
+      "description_hash": "sha256:d38fe19eb78a263e5ee68f72cf866e05c32c14ff29a55382b353c11d6a1435e4",
       "inputSchema": {
         "properties": {
           "include_examples": {
@@ -3417,6 +3490,10 @@
             "type": "Boolean"
           },
           "max_examples_per_type": {
+            "description": "",
+            "type": "Int32"
+          },
+          "max_warning_types": {
             "description": "",
             "type": "Int32"
           }
@@ -3427,9 +3504,13 @@
     },
     {
       "name": "revit_get_panel_schedule",
-      "description_hash": "sha256:01248175d463b73ab5074927d2748a271f0162e094b9fb17c93eea7677f1ba0f",
+      "description_hash": "sha256:cb1b64b1eebf036998d07920704c21132bf172b6936a9e15d27e572fd2f6769a",
       "inputSchema": {
         "properties": {
+          "maxCircuits": {
+            "description": "",
+            "type": "Int32"
+          },
           "panelId": {
             "description": "",
             "type": "Nullable`1"
@@ -3437,6 +3518,10 @@
           "panelName": {
             "description": "",
             "type": "String"
+          },
+          "startCircuit": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [],
@@ -3445,9 +3530,22 @@
     },
     {
       "name": "revit_get_print_settings",
-      "description_hash": "sha256:2daf3b694422776b85d0e72079de384fdb10bdd6ecb12fc94bcc6bd336aef7cf",
+      "description_hash": "sha256:6710c7d608997315a4e54d00e007533c34f67ad7556edf0087c21da13f98c80a",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "kindFilter": {
+            "description": "",
+            "type": "String"
+          },
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -3590,9 +3688,18 @@
     },
     {
       "name": "revit_get_selected_elements",
-      "description_hash": "sha256:832dd75866f1ef53dbe134d31e2b7eccda70e96db47c6a70c0812e184da972b2",
+      "description_hash": "sha256:73aa3cd743e7007514f44f23de746e5d68c47e9f38266a0c07fdbf2b4ab964bb",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -3839,12 +3946,24 @@
     },
     {
       "name": "revit_list_assemblies",
-      "description_hash": "sha256:4d069016c0088f35e3d0d87abc4c234d2b2a385ff9f8c73f8db457c2a14f411a",
+      "description_hash": "sha256:ada120c7d9bef092b91d77ecffd3cac21aab3d9620ac36795a7c083253b69c8f",
       "inputSchema": {
         "properties": {
           "includeMembers": {
             "description": "",
             "type": "Boolean"
+          },
+          "maxMembersPerAssembly": {
+            "description": "",
+            "type": "Int32"
+          },
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [],
@@ -3862,25 +3981,51 @@
     },
     {
       "name": "revit_list_baked_tools",
-      "description_hash": "sha256:c4f96bcfb51878b9e49b8cbf66ba7677a4609a194abc5c608f3f06ee77067f8c",
+      "description_hash": "sha256:babc8a6ba8cb827b5638fed66c37ff2d671cc4029814ab7f2007dbd525a5c9a7",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "limit": {
+            "description": "",
+            "type": "Int32"
+          },
+          "nameFilter": {
+            "description": "",
+            "type": "String"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
+          }
+        },
         "required": [],
         "type": "object"
       }
     },
     {
       "name": "revit_list_export_settings",
-      "description_hash": "sha256:1273a4598c3cdf67c118c3bf9f59cd21bcbe1be83f72b205cf8f1b56e9535001",
+      "description_hash": "sha256:9197889ee6909e87baddadefc27bc8a1d9af5c413cd40cf7e0b915a2b218bba4",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "kindFilter": {
+            "description": "",
+            "type": "String"
+          },
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
+          }
+        },
         "required": [],
         "type": "object"
       }
     },
     {
       "name": "revit_list_family_types_in_family",
-      "description_hash": "sha256:5c86490a4385205c99dce6bffcc5660ee4bd53aade283157e842945630e9220b",
+      "description_hash": "sha256:cb0c846ca828a9de6a8d419fcb207ac5303e22ab83324bdd66e518e6a8dad5d2",
       "inputSchema": {
         "properties": {
           "familyId": {
@@ -3898,6 +4043,18 @@
           "includeParameterValues": {
             "description": "",
             "type": "Boolean"
+          },
+          "maxTypes": {
+            "description": "",
+            "type": "Int32"
+          },
+          "parameterNames": {
+            "description": "",
+            "type": "String[]"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [],
@@ -4367,9 +4524,17 @@
     },
     {
       "name": "revit_load_family_from_path",
-      "description_hash": "sha256:4fb6c3702afb6e65dd46a1de191882b6b5a26ab0ec27f89a58e380cd86bc90b7",
+      "description_hash": "sha256:6ab855e3a2fc5ff54ea672fdd099f5dce69dd90998dcb5dc7092d8241e67b78e",
       "inputSchema": {
         "properties": {
+          "includeSymbols": {
+            "description": "",
+            "type": "Boolean"
+          },
+          "maxSymbolResults": {
+            "description": "",
+            "type": "Int32"
+          },
           "overwriteExisting": {
             "description": "",
             "type": "Boolean"
@@ -4391,12 +4556,16 @@
     },
     {
       "name": "revit_load_selection",
-      "description_hash": "sha256:c46a46a279294637312cd37f36d0f4852dfc84fa84eacb31064773eeb95fc267",
+      "description_hash": "sha256:c0ca54fda402189f8e0f07634a2fbed2de404261e049a937a899ba4df8439cc3",
       "inputSchema": {
         "properties": {
           "includeElementSummary": {
             "description": "",
             "type": "Boolean"
+          },
+          "maxResults": {
+            "description": "",
+            "type": "Int32"
           },
           "name": {
             "description": "",
@@ -4405,6 +4574,10 @@
           "selectionId": {
             "description": "",
             "type": "Nullable`1"
+          },
+          "startIndex": {
+            "description": "",
+            "type": "Int32"
           }
         },
         "required": [],
@@ -4925,12 +5098,20 @@
     },
     {
       "name": "revit_save_selection",
-      "description_hash": "sha256:0c6e180f567053e652ca6d92d7d3bb6f6bebc58f9bd837f4822b319f3e661d89",
+      "description_hash": "sha256:774f61389c22aecbed777d17a1c063e3d4a730b39ef4097657f1c373a8f16e5a",
       "inputSchema": {
         "properties": {
           "elementIds": {
             "description": "",
             "type": "Int64[]"
+          },
+          "includeElementIds": {
+            "description": "",
+            "type": "Boolean"
+          },
+          "maxElementIdResults": {
+            "description": "",
+            "type": "Int32"
           },
           "name": {
             "description": "",
@@ -5676,9 +5857,17 @@
     },
     {
       "name": "revit_show_message",
-      "description_hash": "sha256:b7c567c49e8146e3e731105502c0a8bded22d634a55ca061fc80a6bef63b8c2f",
+      "description_hash": "sha256:f69243bec8b7e37b7676b739ee1498dd37b97cf1567757502136736e79ac48f4",
       "inputSchema": {
         "properties": {
+          "echoMessage": {
+            "description": "",
+            "type": "Boolean"
+          },
+          "maxEchoChars": {
+            "description": "",
+            "type": "Int32"
+          },
           "message": {
             "description": "",
             "type": "String"
@@ -5728,7 +5917,7 @@
     },
     {
       "name": "revit_tag_all_areas",
-      "description_hash": "sha256:e04611c2acdb5a243709d97249eb4369fd6e2e44c6c5a80b528fcdea20deb0bd",
+      "description_hash": "sha256:998b915b967aca66db39f2fbdb369859bd0d87491ad3c7d54b1dfcc1832d0012",
       "inputSchema": {
         "properties": {
           "areaPlanViewId": {
@@ -5738,6 +5927,10 @@
           "areaPlanViewName": {
             "description": "",
             "type": "String"
+          },
+          "limit": {
+            "description": "",
+            "type": "Int32"
           },
           "skipExisting": {
             "description": "",

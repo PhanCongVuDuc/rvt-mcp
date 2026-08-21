@@ -13,7 +13,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "get_panel_schedule";
         public string Description => "Read an electrical panel's circuit schedule: panel metadata, voltage, and the list of circuits with loads. Resolve the panel by panel_id (ElementId of an Electrical Equipment family instance) or by panel_name. Returns panel info plus each circuit's number, rating (amps), apparent load (VA), voltage, pole count, and connected element count.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""panel_id"":{""type"":""integer"",""description"":""ElementId of an electrical panel (Electrical Equipment family instance). Either panel_id or panel_name required.""},""panel_name"":{""type"":""string"",""description"":""Name of an electrical panel. Either panel_id or panel_name required.""}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""panel_id"":{""type"":""integer"",""description"":""ElementId of an electrical panel (Electrical Equipment family instance). Either panel_id or panel_name required.""},""panel_name"":{""type"":""string"",""description"":""Name of an electrical panel. Either panel_id or panel_name required.""},""start_circuit"":{""type"":""integer"",""default"":0,""minimum"":0},""max_circuits"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":1000}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -33,6 +33,8 @@ namespace RvtMcp.Plugin.Handlers
 
             var panelId = request.Value<long?>("panel_id");
             var panelName = request.Value<string>("panel_name");
+            if (!ResponsePaging.TryParse(request, "start_circuit", "max_circuits", 100, 1000, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
 
             if (panelId == null && string.IsNullOrWhiteSpace(panelName))
                 return CommandResult.Fail("Either panel_id or panel_name is required.");
@@ -134,13 +136,18 @@ namespace RvtMcp.Plugin.Handlers
                 });
             }
 
+            var circuitPage = ResponsePaging.Slice(circuits, paging.StartIndex, paging.MaxResults);
             return CommandResult.Ok(new
             {
                 panel_id = panelElemId.ToString(),
                 panel_name = panelDisplayName,
                 panel_type = panelType,
-                total_circuits = circuits.Count,
-                circuits = circuits.ToArray()
+                total_circuits = circuitPage.TotalCount,
+                start_circuit = circuitPage.StartIndex,
+                returned_circuit_count = circuitPage.ReturnedCount,
+                truncated = circuitPage.Truncated,
+                next_circuit = circuitPage.NextIndex,
+                circuits = circuitPage.Items
             });
         }
 

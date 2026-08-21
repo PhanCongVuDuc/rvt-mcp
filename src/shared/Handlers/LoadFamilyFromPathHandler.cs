@@ -25,7 +25,9 @@ namespace RvtMcp.Plugin.Handlers
   ""properties"": {
     ""path"": {""type"": ""string"", ""description"": ""Absolute path to a .rfa file on disk.""},
     ""overwrite_existing"": {""type"": ""boolean"", ""default"": true, ""description"": ""Pass to IFamilyLoadOptions: if family already loaded, overwrite parameters and types.""},
-    ""overwrite_parameter_values"": {""type"": ""boolean"", ""default"": false, ""description"": ""If overwriting, also overwrite parameter values of existing instances.""}
+    ""overwrite_parameter_values"": {""type"": ""boolean"", ""default"": false, ""description"": ""If overwriting, also overwrite parameter values of existing instances.""},
+    ""include_symbols"": {""type"": ""boolean"", ""default"": false, ""description"": ""Include a bounded symbol id/name preview in the response.""},
+    ""max_symbol_results"": {""type"": ""integer"", ""default"": 200, ""minimum"": 1, ""maximum"": 1000}
   }
 }";
 
@@ -55,6 +57,10 @@ namespace RvtMcp.Plugin.Handlers
             var overwriteParameterValues = request["overwrite_parameter_values"] != null
                 ? request.Value<bool>("overwrite_parameter_values")
                 : false;
+            var includeSymbols = request.Value<bool?>("include_symbols") ?? false;
+            var maxSymbolResults = request.Value<int?>("max_symbol_results") ?? 200;
+            if (maxSymbolResults < 1 || maxSymbolResults > 1000)
+                return CommandResult.Fail("max_symbol_results must be between 1 and the hard maximum of 1000.");
 
             if (!File.Exists(path))
             {
@@ -170,8 +176,11 @@ namespace RvtMcp.Plugin.Handlers
                         family_name = familyName,
                         category = category,
                         kind = "loadable",
-                        symbol_ids = symbolIds.ToArray(),
-                        symbol_names = symbolNames.ToArray(),
+                        symbol_count = symbolIds.Count,
+                        symbols_included = includeSymbols,
+                        symbols_truncated = includeSymbols && symbolIds.Count > maxSymbolResults,
+                        symbol_ids = includeSymbols ? symbolIds.Take(maxSymbolResults).ToArray() : null,
+                        symbol_names = includeSymbols ? symbolNames.Take(maxSymbolResults).ToArray() : null,
                         was_overwrite = loadOptions.FamilyWasFound,
                         warnings = new string[0]
                     });

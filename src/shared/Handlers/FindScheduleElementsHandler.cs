@@ -13,7 +13,7 @@ namespace RvtMcp.Plugin.Handlers
 
         public string Name => "find_schedule_elements";
         public string Description => "Find Revit elements aggregated by a schedule (using FilteredElementCollector scoped to the schedule's id). Returns count grouped by category and per-element {id, name, category, typeName}. Optional includeParameters returns each element's visible parameters with unit-corrected values.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""groupByCategory"":{""type"":""boolean"",""default"":true},""includeParameters"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""default"":500}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""groupByCategory"":{""type"":""boolean"",""default"":true},""includeParameters"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""default"":500,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -27,8 +27,8 @@ namespace RvtMcp.Plugin.Handlers
             var groupByCategory = request.Value<bool?>("groupByCategory") ?? true;
             var includeParameters = request.Value<bool?>("includeParameters") ?? false;
             var limit = request.Value<int?>("limit") ?? 500;
-            if (limit < 0) limit = 0;
-            if (limit > 500) limit = 500;
+            if (limit < 1 || limit > 500)
+                return CommandResult.Fail("limit must be between 1 and the hard maximum of 500.");
 
             if (scheduleId == null && string.IsNullOrEmpty(scheduleName))
                 return CommandResult.Fail("Either scheduleId or scheduleName is required.");

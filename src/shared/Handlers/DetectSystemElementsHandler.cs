@@ -12,8 +12,8 @@ namespace RvtMcp.Plugin.Handlers
     public class DetectSystemElementsHandler : IRevitCommand
     {
         public string Name => "detect_system_elements";
-        public string Description => "Detect all elements in a MEP system from a seed element. Uses connector traversal to find pipes, fittings, accessories, and equipment connected to the given element. Returns element IDs by category and bounding box in mm.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""elementId"":{""type"":""integer"",""description"":""Element ID to trace connected system""}},""required"":[""elementId""]}";
+        public string Description => "Detect all elements in a MEP system and return counts plus bounded element-ID previews.";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""elementId"":{""type"":""integer"",""description"":""Element ID to trace connected system""},""start_element"":{""type"":""integer"",""default"":0,""minimum"":0},""max_elements"":{""type"":""integer"",""default"":500,""minimum"":1,""maximum"":5000}},""required"":[""elementId""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -23,6 +23,12 @@ namespace RvtMcp.Plugin.Handlers
 
             var request = JObject.Parse(paramsJson);
             var elementId = request.Value<long?>("elementId");
+            var startElement = request.Value<int?>("start_element") ?? 0;
+            var maxElements = request.Value<int?>("max_elements") ?? 500;
+            if (startElement < 0)
+                return CommandResult.Fail("start_element must be at least 0.");
+            if (maxElements < 1 || maxElements > 5000)
+                return CommandResult.Fail("max_elements must be between 1 and the hard maximum of 5000.");
             if (elementId == null)
                 return CommandResult.Fail("elementId is required.");
 
@@ -131,17 +137,41 @@ namespace RvtMcp.Plugin.Handlers
                 }
                 : null;
 
+            var pipePreview = pipes.OrderBy(id => id).Skip(startElement).Take(maxElements).ToArray();
+            var fittingPreview = fittings.OrderBy(id => id).Skip(startElement).Take(maxElements).ToArray();
+            var accessoryPreview = accessories.OrderBy(id => id).Skip(startElement).Take(maxElements).ToArray();
+            var equipmentPreview = equipment.OrderBy(id => id).Skip(startElement).Take(maxElements).ToArray();
+            var classifiedCount = pipes.Count + fittings.Count + accessories.Count + equipment.Count;
+            var returnedCount = pipePreview.Length + fittingPreview.Length + accessoryPreview.Length + equipmentPreview.Length;
+            var truncated = pipes.Count > startElement + pipePreview.Length
+                || fittings.Count > startElement + fittingPreview.Length
+                || accessories.Count > startElement + accessoryPreview.Length
+                || equipment.Count > startElement + equipmentPreview.Length;
+
             return CommandResult.Ok(new
             {
                 systemName,
                 elementCount = visited.Count,
+                classified_element_count = classifiedCount,
+                start_element = startElement,
+                max_elements_per_category = maxElements,
+                returned_element_id_count = returnedCount,
+                truncated,
+                next_element = truncated ? (int?)(startElement + maxElements) : null,
                 boundingBox,
+                by_category_counts = new
+                {
+                    pipes = pipes.Count,
+                    fittings = fittings.Count,
+                    accessories = accessories.Count,
+                    equipment = equipment.Count
+                },
                 byCategory = new
                 {
-                    pipes,
-                    fittings,
-                    accessories,
-                    equipment
+                    pipes = pipePreview,
+                    fittings = fittingPreview,
+                    accessories = accessoryPreview,
+                    equipment = equipmentPreview
                 }
             });
         }

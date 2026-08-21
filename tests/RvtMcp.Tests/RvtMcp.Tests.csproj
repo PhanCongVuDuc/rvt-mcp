@@ -33,6 +33,9 @@
     <Compile Include="..\..\src\shared\Infrastructure\CaptureOutputPath.cs" Link="Shared\CaptureOutputPath.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\SchemaValidator.cs" Link="Shared\SchemaValidator.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\ResponseSizeGuard.cs" Link="Shared\ResponseSizeGuard.cs" />
+    <Compile Include="..\..\src\shared\Infrastructure\ResponseSizePolicyCatalog.cs" Link="Shared\ResponseSizePolicyCatalog.cs" />
+    <Compile Include="..\..\src\shared\Infrastructure\ResponsePaging.cs" Link="Shared\ResponsePaging.cs" />
+    <Compile Include="..\..\src\shared\Infrastructure\MutationResponseCompactor.cs" Link="Shared\MutationResponseCompactor.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\RequestWait.cs" Link="Shared\RequestWait.cs" />
     <Compile Include="..\..\src\shared\Database\KeiSqlGuard.cs" Link="Shared\KeiSqlGuard.cs" />
     <Compile Include="..\..\src\shared\Config\StatusPrivacySection.cs" Link="Shared\StatusPrivacySection.cs" />

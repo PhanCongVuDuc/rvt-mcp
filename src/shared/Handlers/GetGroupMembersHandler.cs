@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json;
@@ -10,8 +11,8 @@ namespace RvtMcp.Plugin.Handlers
     public class GetGroupMembersHandler : IRevitCommand
     {
         public string Name => "get_group_members";
-        public string Description => "Get a Revit group's metadata and member elements.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""groupId"":{""type"":""integer"",""description"":""Element id of the Revit group to inspect.""}},""required"":[""groupId""]}";
+        public string Description => "Get a Revit group's metadata and a bounded page of member elements.";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""groupId"":{""type"":""integer"",""description"":""Element id of the Revit group to inspect.""},""start_index"":{""type"":""integer"",""default"":0,""minimum"":0},""max_results"":{""type"":""integer"",""default"":200,""minimum"":1,""maximum"":1000}},""required"":[""groupId""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -20,12 +21,15 @@ namespace RvtMcp.Plugin.Handlers
                 return CommandResult.Fail("No document is open.");
 
             long groupId;
+            ResponsePaging.Options paging;
             try
             {
                 var request = string.IsNullOrWhiteSpace(paramsJson) ? new JObject() : JObject.Parse(paramsJson);
                 var parsedGroupId = request.Value<long?>("groupId");
                 if (!parsedGroupId.HasValue)
                     return CommandResult.Fail("groupId integer is required.");
+                if (!ResponsePaging.TryParse(request, "start_index", "max_results", 200, 1000, out paging, out var pagingError))
+                    return CommandResult.Fail(pagingError);
 
                 groupId = parsedGroupId.Value;
             }
@@ -51,10 +55,13 @@ namespace RvtMcp.Plugin.Handlers
             if (group == null)
                 return CommandResult.Fail($"Element {groupId} is a {element.GetType().Name}, not an Autodesk.Revit.DB.Group.");
 
-            var memberIds = group.GetMemberIds();
+            var memberIds = group.GetMemberIds()
+                .OrderBy(RevitCompat.GetId)
+                .ToArray();
+            var page = ResponsePaging.Slice(memberIds, paging.StartIndex, paging.MaxResults);
             var members = new List<object>();
 
-            foreach (var memberId in memberIds)
+            foreach (var memberId in page.Items)
             {
                 var member = doc.GetElement(memberId);
                 members.Add(BuildMemberInfo(doc, memberId, member));
@@ -62,8 +69,12 @@ namespace RvtMcp.Plugin.Handlers
 
             return CommandResult.Ok(new
             {
-                group = BuildGroupInfo(doc, group, memberIds.Count),
-                memberCount = members.Count,
+                group = BuildGroupInfo(doc, group, memberIds.Length),
+                memberCount = page.TotalCount,
+                start_index = page.StartIndex,
+                returned_count = page.ReturnedCount,
+                truncated = page.Truncated,
+                next_index = page.NextIndex,
                 members
             });
         }

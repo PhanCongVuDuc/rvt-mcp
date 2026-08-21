@@ -1,4 +1,6 @@
 using System;
+using System.Security.Cryptography;
+using System.Text;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RvtMcp.Plugin.ToolBaker;
@@ -161,11 +163,25 @@ namespace RvtMcp.Plugin.Handlers
                 description,
                 output_choice = outputChoice,
                 source,
-                source_code = finalSource,
+                source_code_sha256 = Sha256Hex(Encoding.UTF8.GetBytes(finalSource ?? string.Empty)),
+                source_code_byte_count = Encoding.UTF8.GetByteCount(finalSource ?? string.Empty),
                 params_schema = paramsSchema,
-                dll_base64 = assemblyBytes == null ? null : Convert.ToBase64String(assemblyBytes),
+                dll_sha256 = assemblyBytes == null ? null : Sha256Hex(assemblyBytes),
+                dll_byte_count = assemblyBytes?.Length ?? 0,
                 revit_version = AuthToken.RevitVersion
             });
+        }
+
+        private static string Sha256Hex(byte[] bytes)
+        {
+            using (var sha = SHA256.Create())
+            {
+                var hash = sha.ComputeHash(bytes ?? new byte[0]);
+                var builder = new StringBuilder(hash.Length * 2);
+                foreach (var value in hash)
+                    builder.Append(value.ToString("x2"));
+                return builder.ToString();
+            }
         }
 
         private static string NormalizeSource(string toolName, string description, string paramsSchema, string sourceCode)

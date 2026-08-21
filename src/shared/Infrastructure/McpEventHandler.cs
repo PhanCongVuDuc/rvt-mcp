@@ -202,17 +202,72 @@ namespace RvtMcp.Plugin
                     var size = ResponseSizeGuard.Evaluate(
                         commandName: request.CommandName,
                         serializedPayload: response,
-                        topLevelKeyCount: (result.Data as Newtonsoft.Json.Linq.JObject)?.Count ?? 0);
+                        topLevelKeyCount: (result.Data as Newtonsoft.Json.Linq.JObject)?.Count ?? 0,
+                        narrowingHint: ResponseSizePolicyCatalog.GetNarrowingHint(request.CommandName));
                     if (size.Warning != null)
                         Console.Error.WriteLine(size.Warning);
+
                     if (size.Reject)
                     {
-                        response = JsonConvert.SerializeObject(new
+                        var mutationCompleted = result.Success
+                            && ResponseSizePolicyCatalog.ShouldPreserveSuccessfulMutation(
+                                request.CommandName,
+                                request.ParamsJson,
+                                ToolActivityClassifier.Classify(request.CommandName) == ToolActivityKind.Write);
+                        if (mutationCompleted)
                         {
-                            id = request.Id,
-                            success = false,
-                            error = size.RejectError
-                        });
+                            var compacted = MutationResponseCompactor.Compact(result.Data, size.ByteCount);
+                            if (ResponseSizePolicyCatalog.IsMutationOutcomeIndeterminate(request.CommandName))
+                                compacted["mutation_applied"] = JValue.CreateNull();
+                            response = JsonConvert.SerializeObject(new
+                            {
+                                id = request.Id,
+                                success = true,
+                                data = compacted,
+                                error = (string)null,
+                                warning = compacted.Value<string>("warning")
+                            });
+
+                            // Defensive fallback: compaction itself must never breach the hard cap.
+                            var compactSize = ResponseSizeGuard.Evaluate(
+                                request.CommandName,
+                                response,
+                                compacted.Count);
+                            if (compactSize.Reject)
+                            {
+                                response = JsonConvert.SerializeObject(new
+                                {
+                                    id = request.Id,
+                                    success = true,
+                                    data = new
+                                    {
+                                        success = true,
+                                        mutation_applied = compacted["mutation_applied"],
+                                        response_compacted = true,
+                                        original_byte_count = size.ByteCount
+                                    },
+                                    error = (string)null,
+                                    warning = "Command completed successfully; oversized response detail was omitted. Inspect the summary before another call."
+                                });
+                            }
+                        }
+                        else
+                        {
+                            response = JsonConvert.SerializeObject(new
+                            {
+                                id = request.Id,
+                                success = false,
+                                error = size.RejectError
+                            });
+                        }
+                    }
+                    else if (size.AgentWarning != null)
+                    {
+                        var warnedResponse = JObject.Parse(response);
+                        warnedResponse["warning"] = size.AgentWarning;
+                        var candidate = warnedResponse.ToString(Formatting.None);
+                        if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= ResponseSizeGuard.EnforcementBudgetBytes)
+                            response = candidate;
                     }
 
                     request.Tcs.TrySetResult(response);

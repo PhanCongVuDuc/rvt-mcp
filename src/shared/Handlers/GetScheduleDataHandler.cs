@@ -11,7 +11,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "get_schedule_data";
         public string Description => "Get the rendered tabular content of a schedule (header row + body rows) with pagination. Optional cell metadata (cell type + merged cells).";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""startRow"":{""type"":""integer"",""default"":0},""maxRows"":{""type"":""integer"",""default"":200},""includeCellMeta"":{""type"":""boolean"",""default"":false}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""startRow"":{""type"":""integer"",""default"":0,""minimum"":0},""maxRows"":{""type"":""integer"",""default"":200,""minimum"":1,""maximum"":500},""includeCellMeta"":{""type"":""boolean"",""default"":false}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -26,10 +26,10 @@ namespace RvtMcp.Plugin.Handlers
             var maxRows = request.Value<int?>("maxRows") ?? 200;
             var includeCellMeta = request.Value<bool?>("includeCellMeta") ?? false;
 
-            // Clamp pagination params
-            if (startRow < 0) startRow = 0;
-            if (maxRows < 0) maxRows = 0;
-            if (maxRows > 500) maxRows = 500;
+            if (startRow < 0)
+                return CommandResult.Fail("startRow must be at least 0.");
+            if (maxRows < 1 || maxRows > 500)
+                return CommandResult.Fail("maxRows must be between 1 and the hard maximum of 500.");
 
             // Resolve ViewSchedule by id or name
             ViewSchedule schedule = null;

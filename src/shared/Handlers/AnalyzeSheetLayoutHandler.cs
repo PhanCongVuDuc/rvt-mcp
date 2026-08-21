@@ -9,8 +9,8 @@ namespace RvtMcp.Plugin.Handlers
     public class AnalyzeSheetLayoutHandler : IRevitCommand
     {
         public string Name => "analyze_sheet_layout";
-        public string Description => "Analyze a sheet's title block dimensions and viewport positions/scales. Returns title block size and all viewport locations in mm (paper coordinates). Provide sheetNumber or sheetId, or call with no params when active view is a sheet.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""sheetNumber"":{""type"":""string""},""sheetId"":{""type"":""integer""}}}";
+        public string Description => "Analyze a sheet's title block and a bounded page of viewport positions/scales in mm.";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""sheetNumber"":{""type"":""string""},""sheetId"":{""type"":""integer""},""start_viewport"":{""type"":""integer"",""default"":0,""minimum"":0},""max_viewports"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":500}}}";
 
         private const double FeetToMm = 304.8;
 
@@ -23,6 +23,8 @@ namespace RvtMcp.Plugin.Handlers
             var request = JObject.Parse(paramsJson);
             var sheetNumber = request.Value<string>("sheetNumber");
             var sheetId = request.Value<long?>("sheetId");
+            if (!ResponsePaging.TryParse(request, "start_viewport", "max_viewports", 100, 500, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
 
             ViewSheet sheet = null;
 
@@ -84,7 +86,9 @@ namespace RvtMcp.Plugin.Handlers
 
             // Resolve viewports
             var viewportDtos = new List<object>();
-            foreach (var vpId in sheet.GetAllViewports())
+            var viewportIds = sheet.GetAllViewports().OrderBy(RevitCompat.GetId).ToArray();
+            var viewportPage = ResponsePaging.Slice(viewportIds, paging.StartIndex, paging.MaxResults);
+            foreach (var vpId in viewportPage.Items)
             {
                 var vp = doc.GetElement(vpId) as Viewport;
                 if (vp == null) continue;
@@ -128,6 +132,11 @@ namespace RvtMcp.Plugin.Handlers
                 sheetNumber = sheet.SheetNumber,
                 sheetName = sheet.Name,
                 titleBlock = titleBlockDto,
+                viewport_count = viewportPage.TotalCount,
+                start_viewport = viewportPage.StartIndex,
+                returned_viewport_count = viewportPage.ReturnedCount,
+                truncated = viewportPage.Truncated,
+                next_viewport = viewportPage.NextIndex,
                 viewports = viewportDtos
             });
         }

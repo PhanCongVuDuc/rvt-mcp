@@ -11,8 +11,8 @@ namespace RvtMcp.Plugin.Handlers
     public class GetAssemblyMembersHandler : IRevitCommand
     {
         public string Name => "get_assembly_members";
-        public string Description => "Get metadata and member elements for a Revit assembly instance.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""assemblyId"":{""type"":""integer"",""description"":""Element ID of the assembly instance.""}},""required"":[""assemblyId""]}";
+        public string Description => "Get metadata and a bounded page of member elements for a Revit assembly instance.";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""assemblyId"":{""type"":""integer"",""description"":""Element ID of the assembly instance.""},""start_index"":{""type"":""integer"",""default"":0,""minimum"":0},""max_results"":{""type"":""integer"",""default"":200,""minimum"":1,""maximum"":1000}},""required"":[""assemblyId""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -21,6 +21,7 @@ namespace RvtMcp.Plugin.Handlers
                 return CommandResult.Fail("No document is open.");
 
             long assemblyId;
+            ResponsePaging.Options paging;
             try
             {
                 var request = string.IsNullOrWhiteSpace(paramsJson) ? new JObject() : JObject.Parse(paramsJson);
@@ -31,6 +32,8 @@ namespace RvtMcp.Plugin.Handlers
                     return CommandResult.Fail("assemblyId must be an integer.");
 
                 assemblyId = token.Value<long>();
+                if (!ResponsePaging.TryParse(request, "start_index", "max_results", 200, 1000, out paging, out var pagingError))
+                    return CommandResult.Fail(pagingError);
             }
             catch (JsonException ex)
             {
@@ -56,8 +59,11 @@ namespace RvtMcp.Plugin.Handlers
                     $"Element {assemblyId} is not an assembly instance. Actual type: {element.GetType().Name}.");
             }
 
-            var memberIds = assembly.GetMemberIds() ?? new List<ElementId>();
-            var members = memberIds
+            var memberIds = (assembly.GetMemberIds() ?? new List<ElementId>())
+                .OrderBy(RevitCompat.GetId)
+                .ToArray();
+            var page = ResponsePaging.Slice(memberIds, paging.StartIndex, paging.MaxResults);
+            var members = page.Items
                 .Select(id => doc.GetElement(id))
                 .Where(member => member != null)
                 .Select(member => BuildMemberInfo(doc, member))
@@ -77,7 +83,11 @@ namespace RvtMcp.Plugin.Handlers
                 category = assembly.Category?.Name,
                 typeId,
                 typeName = typeElement?.Name,
-                memberCount = members.Length,
+                memberCount = page.TotalCount,
+                start_index = page.StartIndex,
+                returned_count = page.ReturnedCount,
+                truncated = page.Truncated,
+                next_index = page.NextIndex,
                 members
             });
         }

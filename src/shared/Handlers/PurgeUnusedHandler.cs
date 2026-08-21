@@ -11,7 +11,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "purge_unused";
         public string Description => "Conservative purge of unused loadable family symbols. MVP scope: targets=['families'] only. Skips symbols with any placed instance OR any reference from tags/schedules/view filters. dry_run defaults to true.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""targets"":{""type"":""array"",""items"":{""type"":""string"",""enum"":[""families""]}},""dry_run"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":500}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""targets"":{""type"":""array"",""items"":{""type"":""string"",""enum"":[""families""]}},""dry_run"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":500,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -23,6 +23,8 @@ namespace RvtMcp.Plugin.Handlers
                 ?? new HashSet<string> { "families" };
             var dryRun = req.Value<bool?>("dry_run") ?? true;
             var limit = req.Value<int?>("limit") ?? 500;
+            if (limit < 1 || limit > 500)
+                return CommandResult.Fail("limit must be between 1 and the hard maximum of 500.");
 
             if (targets.Any(t => t != "families"))
                 return CommandResult.Fail("MVP: only targets=['families'] is supported in this wave.");

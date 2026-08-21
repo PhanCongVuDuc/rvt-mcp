@@ -24,7 +24,9 @@ namespace RvtMcp.Plugin.Handlers
       ""description"": ""Optional element IDs. If omitted, the current UI selection is used.""
     },
     ""replaceExisting"": { ""type"": ""boolean"", ""default"": false },
-    ""useActiveSelectionIfIdsOmitted"": { ""type"": ""boolean"", ""default"": true }
+    ""useActiveSelectionIfIdsOmitted"": { ""type"": ""boolean"", ""default"": true },
+    ""include_element_ids"": { ""type"": ""boolean"", ""default"": false },
+    ""max_element_id_results"": { ""type"": ""integer"", ""default"": 100, ""minimum"": 1, ""maximum"": 1000 }
   }
 }";
 
@@ -40,6 +42,10 @@ namespace RvtMcp.Plugin.Handlers
             var elementIdsInput = request["elementIds"]?.ToObject<long[]>();
             var replaceExisting = request.Value<bool?>("replaceExisting") ?? false;
             var useActiveSelectionIfIdsOmitted = request.Value<bool?>("useActiveSelectionIfIdsOmitted") ?? true;
+            var includeElementIds = request.Value<bool?>("include_element_ids") ?? false;
+            var maxElementIdResults = request.Value<int?>("max_element_id_results") ?? 100;
+            if (maxElementIdResults < 1 || maxElementIdResults > 1000)
+                return CommandResult.Fail("max_element_id_results must be between 1 and the hard maximum of 1000.");
 
             if (string.IsNullOrWhiteSpace(name))
                 return CommandResult.Fail("name is required and cannot be empty.");
@@ -162,8 +168,12 @@ namespace RvtMcp.Plugin.Handlers
                 name = filterElement.Name,
                 source,
                 count = validIds.Count,
-                elementIds = validIds.Select(id => RevitCompat.GetId(id)).ToArray(),
-                missingIds = missingIds.ToArray()
+                element_ids_included = includeElementIds,
+                element_ids_truncated = includeElementIds && validIds.Count > maxElementIdResults,
+                elementIds = includeElementIds
+                    ? validIds.Select(id => RevitCompat.GetId(id)).Take(maxElementIdResults).ToArray()
+                    : null,
+                missing_count = missingIds.Count
             });
         }
     }

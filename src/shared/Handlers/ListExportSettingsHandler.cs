@@ -17,7 +17,7 @@ namespace RvtMcp.Plugin.Handlers
             "(ExportDWGSettings), named print settings (PrintSetting), and view/sheet sets " +
             "(ViewSheetSet, with the number of views in each set). Read-only.";
 
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""kind_filter"":{""type"":""string"",""enum"":[""all"",""dwg"",""print"",""view_sheet_set""],""default"":""all""},""start_index"":{""type"":""integer"",""default"":0,""minimum"":0},""max_results"":{""type"":""integer"",""default"":50,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -25,16 +25,21 @@ namespace RvtMcp.Plugin.Handlers
             if (doc == null)
                 return CommandResult.Fail("No document is open.");
 
-            // Parameters accepted for consistency; none are required.
+            JObject request;
             try
             {
-                if (!string.IsNullOrWhiteSpace(paramsJson))
-                    JObject.Parse(paramsJson);
+                request = string.IsNullOrWhiteSpace(paramsJson) ? new JObject() : JObject.Parse(paramsJson);
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                // No parameters are used; ignore malformed JSON rather than failing.
+                return CommandResult.Fail("Invalid JSON parameters: " + ex.Message);
             }
+            var kindFilter = request.Value<string>("kind_filter") ?? "all";
+            var allowedKinds = new[] { "all", "dwg", "print", "view_sheet_set" };
+            if (!allowedKinds.Contains(kindFilter, StringComparer.OrdinalIgnoreCase))
+                return CommandResult.Fail("kind_filter must be one of: all, dwg, print, view_sheet_set.");
+            if (!ResponsePaging.TryParse(request, "start_index", "max_results", 50, 500, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
 
             // ----- DWG export settings -----
             var dwgExportSettings = new List<object>();
@@ -139,12 +144,26 @@ namespace RvtMcp.Plugin.Handlers
                 // ViewSheetSet unavailable; leave list empty.
             }
 
+            var includeDwg = kindFilter.Equals("all", StringComparison.OrdinalIgnoreCase) || kindFilter.Equals("dwg", StringComparison.OrdinalIgnoreCase);
+            var includePrint = kindFilter.Equals("all", StringComparison.OrdinalIgnoreCase) || kindFilter.Equals("print", StringComparison.OrdinalIgnoreCase);
+            var includeSets = kindFilter.Equals("all", StringComparison.OrdinalIgnoreCase) || kindFilter.Equals("view_sheet_set", StringComparison.OrdinalIgnoreCase);
+            var dwgPage = ResponsePaging.Slice(includeDwg ? dwgExportSettings : new List<object>(), paging.StartIndex, paging.MaxResults);
+            var printPage = ResponsePaging.Slice(includePrint ? printSettings : new List<object>(), paging.StartIndex, paging.MaxResults);
+            var setPage = ResponsePaging.Slice(includeSets ? viewSheetSets : new List<object>(), paging.StartIndex, paging.MaxResults);
+            var nextIndices = new[] { dwgPage.NextIndex, printPage.NextIndex, setPage.NextIndex }.Where(i => i.HasValue).Select(i => i.Value).ToArray();
+
             return CommandResult.Ok(new
             {
                 doc_title = doc.Title,
-                dwg_export_settings = dwgExportSettings.ToArray(),
-                print_settings = printSettings.ToArray(),
-                view_sheet_sets = viewSheetSets.ToArray()
+                kind_filter = kindFilter,
+                start_index = paging.StartIndex,
+                max_results = paging.MaxResults,
+                counts = new { dwg = dwgPage.TotalCount, print = printPage.TotalCount, view_sheet_set = setPage.TotalCount },
+                truncated = dwgPage.Truncated || printPage.Truncated || setPage.Truncated,
+                next_index = nextIndices.Length > 0 ? (int?)nextIndices.Max() : null,
+                dwg_export_settings = dwgPage.Items,
+                print_settings = printPage.Items,
+                view_sheet_sets = setPage.Items
             });
         }
     }
