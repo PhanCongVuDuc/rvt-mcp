@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## v0.6.0 - Toast, privacy journal, Status flags, KEI tools, README refresh
+## v0.6.0 - Agent guardrails, oversized-response spill, toast/privacy, and KEI tools
 
 ### Added
 
@@ -9,13 +9,20 @@
 - **Capture path UX** — clearer allowlist errors; optional default output under captures.
 - **Status dialog privacy/bake flags** — ribbon **Status** lists toast, ToolBaker, adaptive bake, body cache, and persist journal (read-only snapshot for operators). Unit-tested via `StatusPrivacySection`.
 - **Toolset `kei`** — `revit_get_active_project_db`, `revit_query_kei_database`, `revit_write_kei_database`, `revit_import_project_equipment` for WAL-safe KEI project SQLite through the Revit process. Enable with `--toolsets kei` (or `--toolsets all`). See `docs/kei-equipment-import.md`.
+- **Local oversized-response spill** — eight approved bulk tools accept `output=inline|file` and write SQLite, NDJSON, JSON, or text artifacts under `%LOCALAPPDATA%\RvtMcp\spill\`. Responses include an absolute local path, format/schema, true byte count, and a bounded preview. `revit_send_code_to_revit` and oversized `revit_run_baked_tool` output auto-spill. Files older than 24 hours are removed and the directory is capped at 50 artifacts.
 
 ### Changed
 
 - **Default toolsets narrowed** to `query`, `create`, `view`, `meta` (**40** tools) so weak models are not flooded with the full catalog. Clash, export, MEP, structural, ToolBaker, and the rest stay available via `--toolsets all` or an explicit CSV.
 - **`batch_execute` capped at 20** sub-commands (plugin + server fail-fast).
-- **Wire responses over 1 MiB are rejected** (100 KB still logs an S4 warning). Narrow filters/`max_results` instead of retrying the same dump.
+- **Oversized responses use a layered policy** — agent-visible warning from 64 KiB, strong warning above 256 KiB, and a ~700 KiB compact-response enforcement budget that leaves headroom below the 1 MiB delivered ceiling. Scoped reads receive command-specific narrowing guidance; completed mutations retain truthful `success=true` summaries instead of inviting unsafe retries.
+- **Bulk response scope hardened** — all 97 surveyed scoped-risk tools have command-specific recovery hints; 23 previously unscoped tools now expose bounded filters/paging or compact response controls.
 - **60s request timeout completes the plugin TCS** so a late handler result cannot ride the next UI tick. Clash/export tool descriptions tell agents not to retry after timeout.
+
+### Operational notes
+
+- SQLite spill is opt-in bulk work and is written synchronously on Revit's UI thread through the `ExternalEvent` execution boundary. Very large exports (tens of thousands of rows) may briefly make the Revit UI feel unresponsive while the artifact is written.
+- Spill paths are local same-machine paths. Remote MCP clients can inspect the bounded preview and schema but cannot open the artifact directly.
 
 ### Docs
 
@@ -27,6 +34,10 @@
 
 - Out-of-typed-tool workflows → **`revit_send_code_to_revit` (C# only)**.
 - **Will not do this cycle:** Python send_code host, Revit Viewer support, Family Editor authoring tool suite (#7).
+
+### Acknowledgements
+
+- Thanks to [@Thestreetarckitect](https://github.com/Thestreetarckitect) for the detailed Family Authoring Tool Suite proposal in #7, which helped clarify the roadmap and this release's scope.
 
 ## v0.5.0 - Tool Search discoverability + multi-Revit routing (BREAKING)
 

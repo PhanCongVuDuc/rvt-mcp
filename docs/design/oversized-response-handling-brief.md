@@ -1,6 +1,6 @@
 # Brief: Xử lý response >1 MiB — khảo sát tool + lộ trình 2 bước
 
-> **Trạng thái:** IMPLEMENTED — Bước 1 + Bước 2 hoàn tất, đang chờ review tại Chốt Dừng #3.
+> **Trạng thái:** COMPLETE — Bước 1 + Bước 2 hoàn tất; Chốt Dừng #3 đã được User duyệt.
 > **Cơ chế kiểm soát:** User (Khoa) + Claude giám sát. Có **3 chốt dừng bắt buộc** (xem §7).
 > **Repo:** `rvt-mcp` (chỉ repo này). Nhánh làm việc hiện tại: `hardening/agent-guardrails` (PR #10).
 
@@ -155,7 +155,7 @@ Ghi chú: cân nhắc để cùng một **cơ chế spill** dùng chung cho §5-
 
 ---
 
-# PHỤ LỤC — SPEC BƯỚC 2 (đã khóa, sẵn sàng giao agent)
+# PHỤ LỤC — SPEC BƯỚC 2 (đã triển khai)
 
 > **Tiền đề:** Bước 1 đã hoàn tất và merge-ready (guard 3 mức 64/256 KiB + budget 700 KiB, scope nhóm 3, mutation-preserve, 424 test xanh). Bước 2 chỉ đụng 8 tool nhóm 4 + `send_code`; **không** sửa lại nhóm 1/2/3.
 
@@ -186,6 +186,7 @@ Thêm `src/shared/Infrastructure/ResponseSpillWriter.cs` (format-agnostic) + wri
 - **SQLite:** một bảng cho mỗi collection; cột suy từ DTO (typed). Kèm mô tả `schema` (bảng→cột) trong response.
 - **NDJSON:** một record/dòng. `JSON`: một mảng/đối tượng gốc. `text`: raw.
 - **Dọn file:** gọi cleanup (xoá >24h + cap 50 file mới nhất) **mỗi lần** ghi spill mới.
+- **Execution model:** spill được ghi đồng bộ trên Revit UI thread qua `ExternalEvent`; export opt-in vài chục nghìn row có thể làm UI khựng ngắn trong lúc ghi file.
 - **KHÔNG** bundle Python bắt buộc. Response có thể kèm 1 dòng gợi ý cách query (SQL cho SQLite / jq cho NDJSON).
 
 ### Response envelope khi `output=file`
@@ -220,4 +221,4 @@ Thêm `src/shared/Infrastructure/ResponseSpillWriter.cs` (format-agnostic) + wri
 - [x] Cleanup >24h + cap 50 file, có test cho logic chọn file xoá.
 - [x] `send_code` + `run_baked_tool`: auto-spill khi >budget, không `success=false`, có test.
 - [x] Golden tool-list cập nhật cho param `output` mới.
-- [x] Toàn bộ 468 test xanh. **CHỐT DỪNG #3** — đang chờ review User + Claude trước khi coi xong.
+- [x] Toàn bộ 468 test xanh. **CHỐT DỪNG #3** — User đã review và duyệt hoàn tất.
