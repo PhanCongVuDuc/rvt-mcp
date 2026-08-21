@@ -532,7 +532,7 @@
     },
     {
       "name": "revit_batch_execute",
-      "description_hash": "sha256:3a58361f599e92b371e8b5feba16d40fb4724afa9fdeb131bf49d6fcfbc7e369",
+      "description_hash": "sha256:868ab4d56acd1fa318eb89745ca1ba916f51353e95809ebf2025336c57aeb1ef",
       "inputSchema": {
         "properties": {
           "commands": {
@@ -542,6 +542,10 @@
           "continueOnError": {
             "description": "",
             "type": "Boolean"
+          },
+          "output": {
+            "description": "",
+            "type": "String"
           }
         },
         "required": [
@@ -785,7 +789,7 @@
     },
     {
       "name": "revit_compute_room_finishes",
-      "description_hash": "sha256:4114f9c6f4a0c9041a082f8befc8f662d1fc4651ba131682741361b5ad75ccbe",
+      "description_hash": "sha256:16e0924b05453c3d4fc8598b44ea4c2087e187f8c1c76ba0d73614276e488af4",
       "inputSchema": {
         "properties": {
           "includeEmpty": {
@@ -799,6 +803,10 @@
           "limit": {
             "description": "",
             "type": "Int32"
+          },
+          "output": {
+            "description": "",
+            "type": "String"
           },
           "roomIds": {
             "description": "",
@@ -2898,9 +2906,14 @@
     },
     {
       "name": "revit_export_room_data",
-      "description_hash": "sha256:6a8f84ea6b27ec9a699d17dcaf20a759463908e3abdb10f9e34babd6ca4d91dd",
+      "description_hash": "sha256:631f29bc71a9039ff99280f0a18943cf5e338b615299f6b846af5604c63a9dd2",
       "inputSchema": {
-        "properties": {},
+        "properties": {
+          "output": {
+            "description": "",
+            "type": "String"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -2935,9 +2948,13 @@
     },
     {
       "name": "revit_export_shared_parameter_file",
-      "description_hash": "sha256:6a4a3d646f2e2539d4d11aae99f379378dd74d92f1d44e66024bde63b3f9f570",
+      "description_hash": "sha256:550994c685aa42487ccd6b68b0f90bf701cafcd255215ec171b45df86c7bbb12",
       "inputSchema": {
         "properties": {
+          "output": {
+            "description": "",
+            "type": "String"
+          },
           "sharedParameterFilePath": {
             "description": "",
             "type": "String"
@@ -3440,7 +3457,7 @@
     },
     {
       "name": "revit_get_material_takeoff",
-      "description_hash": "sha256:8d2127ed531e2b1afb034f22f396e62ac7df5f031323f793b99dae0484aeb1e4",
+      "description_hash": "sha256:ff17050841710d594192bf4a7b8032780cd87ada22fdc67e5bc23cb4334801e4",
       "inputSchema": {
         "properties": {
           "categoryFilter": {
@@ -3456,6 +3473,10 @@
             "type": "Boolean"
           },
           "materialNamePattern": {
+            "description": "",
+            "type": "String"
+          },
+          "output": {
             "description": "",
             "type": "String"
           }
@@ -5078,10 +5099,14 @@
     },
     {
       "name": "revit_run_baked_tool",
-      "description_hash": "sha256:579e42dff22f823eb10de7253f3e8fa31f670ab6a29f5232ecbc6d87a39fbcaf",
+      "description_hash": "sha256:cabbf50d60712c43ba573c5146dc70bc27d6e8b5a6c579cf26813b1fea12ca3b",
       "inputSchema": {
         "properties": {
           "name": {
+            "description": "",
+            "type": "String"
+          },
+          "output": {
             "description": "",
             "type": "String"
           },
@@ -5160,7 +5185,7 @@
     },
     {
       "name": "revit_send_code_to_revit",
-      "description_hash": "sha256:22a874684f1938bb44a4b53020a4ec4e5d683e1326d76f2c42f4d28a85d06f73",
+      "description_hash": "sha256:b432ea3aaaa106144bfca11b143de25a54613dbe0be73a7b7a77d1eee532977e",
       "inputSchema": {
         "properties": {
           "code": {
@@ -6215,7 +6240,7 @@
     },
     {
       "name": "revit_workflow_data_roundtrip",
-      "description_hash": "sha256:3b862e7bce0ac7eaf09c96581ff9acbeb53751a28a97ca6e446834c519761a65",
+      "description_hash": "sha256:1a27a7144c317e3c059b88d0d4157ddf11c57a31247def72813bdd9ec7f943bb",
       "inputSchema": {
         "properties": {
           "category": {
@@ -6239,6 +6264,10 @@
             "type": "String"
           },
           "mode": {
+            "description": "",
+            "type": "String"
+          },
+          "output": {
             "description": "",
             "type": "String"
           },
@@ -6396,7 +6425,7 @@
     },
     {
       "name": "revit_workflow_takeoff_report",
-      "description_hash": "sha256:4d3f3eea67266ed41be01bae789d90942d5d3b3d1d490e47b6c65b01d1dec141",
+      "description_hash": "sha256:fbd67218ecd9d0671375bac22ea9ceb3332e55493271ab022ee93cb35c500d5a",
       "inputSchema": {
         "properties": {
           "categories": {
@@ -6418,6 +6447,10 @@
           "limit_per_category": {
             "description": "",
             "type": "Int32"
+          },
+          "output": {
+            "description": "",
+            "type": "String"
           },
           "output_path": {
             "description": "",

@@ -26,7 +26,7 @@ namespace RvtMcp.Plugin.Handlers
 
         public string Name => "batch_execute";
         public string Description => "Run multiple MCP commands in one Revit TransactionGroup (one undo step).";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""commands"":{""type"":""array"",""items"":{""type"":""object""}},""continueOnError"":{""type"":""boolean""}},""required"":[""commands""]}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""commands"":{""type"":""array"",""items"":{""type"":""object""}},""continueOnError"":{""type"":""boolean""},""output"":{""type"":""string"",""enum"": [""inline"", ""file""],""default"":""inline""}},""required"":[""commands""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {

@@ -88,6 +88,26 @@ namespace RvtMcp.Tests
             Assert.Contains("maximum", source);
         }
 
+        [Theory]
+        [InlineData("ComputeRoomFinishesHandler.cs")]
+        [InlineData("ExportRoomDataHandler.cs")]
+        [InlineData("GetMaterialTakeoffHandler.cs")]
+        [InlineData("WorkflowTakeoffReportHandler.cs")]
+        [InlineData("BatchExecuteHandler.cs")]
+        [InlineData("ExportSharedParameterFileHandler.cs")]
+        [InlineData("RunBakedToolHandler.cs")]
+        [InlineData("WorkflowDataRoundtripHandler.cs")]
+        public void Approved_group4_handler_schemas_accept_only_inline_or_file_output(string handlerFile)
+        {
+            var source = File.ReadAllText(Path.Combine(GetRepoRoot(), "src", "shared", "Handlers", handlerFile));
+            var outputIndex = source.IndexOf("\"\"output\"\"", StringComparison.Ordinal);
+            Assert.True(outputIndex >= 0, "Missing output schema property in " + handlerFile);
+            var outputSchema = source.Substring(outputIndex, Math.Min(300, source.Length - outputIndex));
+            Assert.Contains("\"\"enum\"\"", outputSchema);
+            Assert.Contains("\"\"inline\"\"", outputSchema);
+            Assert.Contains("\"\"file\"\"", outputSchema);
+        }
+
         [Fact]
         public void Adaptive_suggestion_list_exposes_state_and_bounded_paging()
         {
@@ -99,6 +119,19 @@ namespace RvtMcp.Tests
             Assert.Contains("int startIndex", program);
             Assert.Contains("int limit", program);
             Assert.Contains("hard maximum", handler);
+        }
+
+        [Fact]
+        public void Event_boundary_processes_file_and_auto_spill_before_response_guarding()
+        {
+            var eventHandler = File.ReadAllText(Path.Combine(
+                GetRepoRoot(), "src", "shared", "Infrastructure", "McpEventHandler.cs"));
+            var spillIndex = eventHandler.IndexOf("ResponseSpillProcessor", StringComparison.Ordinal);
+            var guardIndex = eventHandler.IndexOf("ResponseSizeGuard.Evaluate", StringComparison.Ordinal);
+
+            Assert.True(spillIndex >= 0, "McpEventHandler must invoke ResponseSpillProcessor.");
+            Assert.True(guardIndex > spillIndex, "Spill must replace bulk data before the response-size guard runs.");
+            Assert.Contains("result.Data = spillOutcome.Data", eventHandler);
         }
 
         [Fact]

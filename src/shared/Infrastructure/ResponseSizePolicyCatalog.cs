@@ -139,15 +139,15 @@ namespace RvtMcp.Plugin
             ["load_selection"] = "Retry with `startIndex`, a smaller `maxResults`, or `includeElementSummary=false`.",
             ["apply_bake"] = "Bake completed; source and DLL bodies are omitted in favor of hashes and byte counts.",
 
-            // Survey group 4 remains inline/reject until opt-in spill is reviewed in step 2.
-            ["export_room_data"] = "This is an unscoped bulk export. Use `list_rooms` with level/status filters and a smaller limit; do not retry the same full export.",
-            ["batch_execute"] = "Split `commands` into smaller batches; completed mutation results are compacted rather than reported as failed.",
-            ["run_baked_tool"] = "Baked output is schema-dependent. Narrow the baked tool's own `params`; large arbitrary output needs step-2 file spill.",
-            ["export_shared_parameter_file"] = "This is a bulk nested export with no inline pagination. Do not retry the same request; step-2 file output is required for the full dataset.",
-            ["get_material_takeoff"] = "Use `categoryFilter`, `materialNamePattern`, `includeElements=false`, and a smaller `elementLimit`.",
-            ["compute_room_finishes"] = "Use fewer `roomIds`, exact `levelName`, and a smaller `limit`.",
-            ["workflow_data_roundtrip"] = "Use fewer `parameter_names` or a smaller input file; full detail needs step-2 file output.",
-            ["workflow_takeoff_report"] = "Use fewer `categories`, disable unneeded detail, and lower `limit_per_category`."
+            // Survey group 4: inline retains step-1 behavior; output=file uses local spill.
+            ["export_room_data"] = "Retry with `output=file` for the full local SQLite artifact, or use `list_rooms` with filters and a smaller limit.",
+            ["batch_execute"] = "Use `output=file` for NDJSON sub-results or split `commands`; never blindly retry a completed batch mutation.",
+            ["run_baked_tool"] = "Use `output=file` to force a local artifact or narrow the baked tool's `params`; oversized inline output auto-spills.",
+            ["export_shared_parameter_file"] = "Retry with `output=file` for the full local JSON artifact; do not retry the same unscoped inline request.",
+            ["get_material_takeoff"] = "Use `output=file` for local SQLite, or narrow `categoryFilter`/`materialNamePattern` and lower `elementLimit`.",
+            ["compute_room_finishes"] = "Use `output=file` for local SQLite, or use fewer `roomIds`, exact `levelName`, and a smaller `limit`.",
+            ["workflow_data_roundtrip"] = "Use `output=file` for an NDJSON report, or use fewer `parameter_names`/a smaller input file.",
+            ["workflow_takeoff_report"] = "Use `output=file` for local SQLite, or use fewer `categories` and lower `limit_per_category`."
         };
 
         public static string GetNarrowingHint(string? commandName)

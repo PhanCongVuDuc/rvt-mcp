@@ -152,6 +152,46 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
+        public void Approved_bulk_tools_expose_local_file_output_while_send_code_remains_automatic()
+        {
+            var expected = new[]
+            {
+                "revit_compute_room_finishes",
+                "revit_export_room_data",
+                "revit_get_material_takeoff",
+                "revit_workflow_takeoff_report",
+                "revit_batch_execute",
+                "revit_export_shared_parameter_file",
+                "revit_run_baked_tool",
+                "revit_workflow_data_roundtrip"
+            };
+            var serverAssembly = typeof(RvtMcp.Server.ToolsetFilter).Assembly;
+            var methods = serverAssembly.GetTypes()
+                .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                .Select(method => new
+                {
+                    Method = method,
+                    Tool = method.GetCustomAttribute<McpServerToolAttribute>(),
+                    Description = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty
+                })
+                .Where(item => item.Tool != null)
+                .ToArray();
+
+            foreach (var name in expected)
+            {
+                var tool = Assert.Single(methods, item => item.Tool!.Name == name);
+                var output = Assert.Single(tool.Method.GetParameters(), parameter => parameter.Name == "output");
+                Assert.Equal(typeof(string), output.ParameterType);
+                Assert.Equal("inline", output.DefaultValue);
+                Assert.Contains("local same-machine", tool.Description, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var sendCode = Assert.Single(methods, item => item.Tool!.Name == "revit_send_code_to_revit");
+            Assert.DoesNotContain(sendCode.Method.GetParameters(), parameter => parameter.Name == "output");
+            Assert.Contains("auto-spill", sendCode.Description, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public void Server_instructions_stay_under_2048_utf8_bytes()
         {
             var programType = typeof(RvtMcp.Server.ToolsetFilter).Assembly.GetType("RvtMcp.Server.Program")!;

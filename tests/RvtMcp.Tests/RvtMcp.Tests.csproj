@@ -36,6 +36,9 @@
     <Compile Include="..\..\src\shared\Infrastructure\ResponseSizePolicyCatalog.cs" Link="Shared\ResponseSizePolicyCatalog.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\ResponsePaging.cs" Link="Shared\ResponsePaging.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\MutationResponseCompactor.cs" Link="Shared\MutationResponseCompactor.cs" />
+    <Compile Include="..\..\src\shared\Infrastructure\ResponseSpillWriter.cs" Link="Shared\ResponseSpillWriter.cs" />
+    <Compile Include="..\..\src\shared\Infrastructure\ResponseSpillPolicy.cs" Link="Shared\ResponseSpillPolicy.cs" />
+    <Compile Include="..\..\src\shared\Infrastructure\ResponseSpillProcessor.cs" Link="Shared\ResponseSpillProcessor.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\RequestWait.cs" Link="Shared\RequestWait.cs" />
     <Compile Include="..\..\src\shared\Database\KeiSqlGuard.cs" Link="Shared\KeiSqlGuard.cs" />
     <Compile Include="..\..\src\shared\Config\StatusPrivacySection.cs" Link="Shared\StatusPrivacySection.cs" />

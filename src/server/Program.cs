@@ -1304,12 +1304,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     [McpServerToolType, Toolset("export")]
     public class ExportTools
     {
-        [McpServerTool(Name = "revit_export_room_data", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export all rooms. Returns array of {name, number, area (m²), perimeter, level, department, volume (m³)}. For space analysis and reporting.")]
-        public static async Task<string> ExportRoomData()
+        [McpServerTool(Name = "revit_export_room_data", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export all rooms. output=inline returns DTO data; output=file writes SQLite to a local same-machine absolute path with schema and bounded preview. Remote clients can use preview but cannot read the local file.")]
+        public static async Task<string> ExportRoomData(string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("export_room_data");
+                var result = await ToolGateway.SendToRevit("export_room_data", new { output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1983,7 +1983,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     [McpServerToolType, Toolset("meta")]
     public class SendCodeTools
     {
-        [McpServerTool(Name = "revit_send_code_to_revit"), System.ComponentModel.Description("Compile + run C# inside Revit for workflows not covered by typed tools. Variables: doc (Document), uidoc (UIDocument), app (UIApplication). Write body only, auto-wrapped in static Run(UIApplication). Must end with 'return ...;'. Namespaces: System, System.Linq, System.Collections.Generic, Autodesk.Revit.DB, Autodesk.Revit.UI. Common patterns: FilteredElementCollector for queries, Transaction for mutations, UnitUtils.ConvertFromInternalUnits(value, UnitTypeId.Millimeters), uidoc.Selection.SetElementIds(), OverrideGraphicSettings.")]
+        [McpServerTool(Name = "revit_send_code_to_revit"), System.ComponentModel.Description("Compile + run C# inside Revit for workflows not covered by typed tools. Variables: doc (Document), uidoc (UIDocument), app (UIApplication). Write body only, auto-wrapped in static Run(UIApplication). Must end with 'return ...;'. Output above 700 KiB auto-spills to a local same-machine file with schema and preview; there is no output parameter. Remote clients receive preview but cannot read the local file. Namespaces: System, System.Linq, System.Collections.Generic, Autodesk.Revit.DB, Autodesk.Revit.UI.")]
         public static async Task<string> SendCodeToRevit(string code)
         {
             try
@@ -2012,14 +2012,14 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 
         [McpServerTool(Name = "revit_run_baked_tool"), System.ComponentModel.Description(
             "Run a baked tool by name. Call list_baked_tools first to discover. " +
-            "Params: name (baked tool name), params (object, tool-specific).")]
-        public static async Task<string> RunBakedTool(string name, object @params = null)
+            "Params: name, params (tool-specific), output=inline|file. File mode writes a sniffed local same-machine artifact; oversized inline output auto-spills. Remote clients receive preview only.")]
+        public static async Task<string> RunBakedTool(string name, object @params = null, string output = "inline")
         {
             var revitVersionBeforeConnect = ToolGateway.CurrentRevitVersion ?? AuthToken.Target ?? "unknown";
             try
             {
                 var normalizedParams = NormalizeRunBakedToolParams(@params);
-                var result = await ToolGateway.SendToRevit("run_baked_tool", new { name, @params = normalizedParams });
+                var result = await ToolGateway.SendToRevit("run_baked_tool", new { name, @params = normalizedParams, output });
                 var revitVersion = ToolGateway.CurrentRevitVersion ?? revitVersionBeforeConnect;
                 RecordBakedToolRun(name, revitVersion, success: true, error: null);
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
@@ -2315,8 +2315,8 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             "'[{\"command\":\"create_level\",\"params\":{\"elevation\":3000}}, " +
             "{\"command\":\"create_grid\",\"params\":{\"startX\":0,\"startY\":0,\"endX\":5000,\"endY\":0}}]'. " +
             "On any failure the whole group rolls back unless continueOnError=true. " +
-            "Returns: {results: [{index, ok, data|error}], rolledBack}.")]
-        public static async Task<string> BatchExecute(string commands, bool continueOnError = false)
+            "Returns: {results: [{index, ok, data|error}], rolledBack}. output=file writes NDJSON to a local same-machine absolute path with bounded preview; remote clients receive preview only.")]
+        public static async Task<string> BatchExecute(string commands, bool continueOnError = false, string output = "inline")
         {
             try
             {
@@ -2329,7 +2329,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                         error = "batch_execute supports at most 20 commands (got " + parsed.Count + "). Split the batch."
                     }, Formatting.Indented);
                 }
-                var result = await ToolGateway.SendToRevit("batch_execute", new { commands = parsed, continueOnError });
+                var result = await ToolGateway.SendToRevit("batch_execute", new { commands = parsed, continueOnError, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3240,8 +3240,8 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_material_takeoff", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate detailed material takeoff grouped by material and category")]
-        public static async Task<string> GetMaterialTakeoff(string categoryFilter = "", string materialNamePattern = "", bool includeElements = false, int elementLimit = 100)
+        [McpServerTool(Name = "revit_get_material_takeoff", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate material takeoff. output=file writes SQLite to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> GetMaterialTakeoff(string categoryFilter = "", string materialNamePattern = "", bool includeElements = false, int elementLimit = 100, string output = "inline")
         {
             try
             {
@@ -3250,7 +3250,8 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                     category_filter = categoryFilter,
                     material_name_pattern = materialNamePattern,
                     include_elements = includeElements,
-                    element_limit = elementLimit
+                    element_limit = elementLimit,
+                    output
                 });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
@@ -3551,12 +3552,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_compute_room_finishes", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate ceiling/wall/floor finish areas (m2) and perimeter (mm) for rooms.")]
-        public static async Task<string> ComputeRoomFinishes(long[] roomIds = null, string levelName = "", bool includeEmpty = true, int limit = 5000)
+        [McpServerTool(Name = "revit_compute_room_finishes", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate room finishes and boundary materials. output=file writes relational SQLite to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> ComputeRoomFinishes(long[] roomIds = null, string levelName = "", bool includeEmpty = true, int limit = 5000, string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("compute_room_finishes", new { room_ids = roomIds, level_name = levelName, include_empty = includeEmpty, limit });
+                var result = await ToolGateway.SendToRevit("compute_room_finishes", new { room_ids = roomIds, level_name = levelName, include_empty = includeEmpty, limit, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3768,12 +3769,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_shared_parameter_file", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export the content of a shared parameter file as structured DTO data.")]
-        public static async Task<string> ExportSharedParameterFile(string sharedParameterFilePath = "")
+        [McpServerTool(Name = "revit_export_shared_parameter_file", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export a shared parameter file as structured DTO data. output=file writes JSON to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> ExportSharedParameterFile(string sharedParameterFilePath = "", string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("export_shared_parameter_file", new { sharedParameterFilePath });
+                var result = await ToolGateway.SendToRevit("export_shared_parameter_file", new { sharedParameterFilePath, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3952,12 +3953,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_workflow_data_roundtrip", Destructive = false), System.ComponentModel.Description("Export category parameter data to JSON/CSV and optionally import edited values back with dry-run validation.")]
-        public static async Task<string> WorkflowDataRoundtrip(string category, string export_path, string import_path = "", string mode = "export_only", bool dry_run = true, string key_field = "element_id", string[] parameter_names = null)
+        [McpServerTool(Name = "revit_workflow_data_roundtrip", Destructive = false), System.ComponentModel.Description("Export/import category parameter data with validation. output=file writes the response report as NDJSON to a local same-machine absolute path with bounded preview; remote clients receive preview only.")]
+        public static async Task<string> WorkflowDataRoundtrip(string category, string export_path, string import_path = "", string mode = "export_only", bool dry_run = true, string key_field = "element_id", string[] parameter_names = null, string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("workflow_data_roundtrip", new { category, export_path, import_path, mode, dry_run, key_field, parameter_names });
+                var result = await ToolGateway.SendToRevit("workflow_data_roundtrip", new { category, export_path, import_path, mode, dry_run, key_field, parameter_names, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3985,12 +3986,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_workflow_takeoff_report", Destructive = false), System.ComponentModel.Description("Generate category, quantity, material, and optional cost takeoff reports with optional JSON/CSV export.")]
-        public static async Task<string> WorkflowTakeoffReport(string[] categories = null, bool include_materials = true, bool include_quantities = true, bool include_cost = false, string output_path = "", int limit_per_category = 500)
+        [McpServerTool(Name = "revit_workflow_takeoff_report", Destructive = false), System.ComponentModel.Description("Generate category, quantity, material, and optional cost takeoff reports. output=file writes relational SQLite to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> WorkflowTakeoffReport(string[] categories = null, bool include_materials = true, bool include_quantities = true, bool include_cost = false, string output_path = "", int limit_per_category = 500, string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("workflow_takeoff_report", new { categories, include_materials, include_quantities, include_cost, output_path, limit_per_category });
+                var result = await ToolGateway.SendToRevit("workflow_takeoff_report", new { categories, include_materials, include_quantities, include_cost, output_path, limit_per_category, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }

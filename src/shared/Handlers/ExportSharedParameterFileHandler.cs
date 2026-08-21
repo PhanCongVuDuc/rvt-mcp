@@ -19,7 +19,8 @@ namespace RvtMcp.Plugin.Handlers
   ""properties"": {
     ""sharedParameterFilePath"": { ""type"": ""string"" },
     ""includeRawLines"": { ""type"": ""boolean"", ""default"": false },
-    ""includeBindings"": { ""type"": ""boolean"", ""default"": true }
+    ""includeBindings"": { ""type"": ""boolean"", ""default"": true },
+    ""output"": { ""type"": ""string"", ""enum"": [""inline"", ""file""], ""default"": ""inline"" }
   }
 }";
 

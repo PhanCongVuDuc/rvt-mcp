@@ -1,6 +1,6 @@
 # Brief: Xử lý response >1 MiB — khảo sát tool + lộ trình 2 bước
 
-> **Trạng thái:** REQUIREMENTS (chưa thi công). Đây là bản giao việc cho một agent thực thi.
+> **Trạng thái:** IMPLEMENTED — Bước 1 + Bước 2 hoàn tất, đang chờ review tại Chốt Dừng #3.
 > **Cơ chế kiểm soát:** User (Khoa) + Claude giám sát. Có **3 chốt dừng bắt buộc** (xem §7).
 > **Repo:** `rvt-mcp` (chỉ repo này). Nhánh làm việc hiện tại: `hardening/agent-guardrails` (PR #10).
 
@@ -144,14 +144,14 @@ Ghi chú: cân nhắc để cùng một **cơ chế spill** dùng chung cho §5-
 
 ## 8. Tiêu chí nghiệm thu (Definition of Done)
 
-- [ ] Bảng khảo sát đầy đủ ~227 tool, phân 4 nhóm, được duyệt.
-- [ ] Nhóm 2: thông báo lỗi reject trỏ đúng tham số thu hẹp của từng tool (có test).
-- [ ] Nhóm 3: đã bổ sung scope, không còn tool đọc "kẹt cứng" khi model lớn (có test).
-- [ ] Tool ghi: response lớn không còn giả `success=false` (có test).
-- [ ] Nhóm 4: `output=file` opt-in hoạt động, có schema + preview + dọn file (có test).
-- [ ] `send_code`: auto spill khi output lớn, trả path + preview (có test).
-- [ ] Toàn bộ test xanh; golden snapshot (`tests/RvtMcp.Tests/Golden/`) cập nhật nếu tool-list đổi.
-- [ ] Không hồi quy hành vi tool < 1 MiB.
+- [x] Bảng khảo sát đầy đủ 230 tool, phân 4 nhóm, được duyệt.
+- [x] Nhóm 2: thông báo lỗi reject trỏ đúng tham số thu hẹp của từng tool (có test).
+- [x] Nhóm 3: đã bổ sung scope, không còn tool đọc "kẹt cứng" khi model lớn (có test).
+- [x] Tool ghi: response lớn không còn giả `success=false` (có test).
+- [x] Nhóm 4: `output=file` opt-in hoạt động, có schema + preview + dọn file (có test).
+- [x] `send_code`: auto spill khi output lớn, trả path + preview (có test).
+- [x] Toàn bộ 468 test xanh; golden snapshot (`tests/RvtMcp.Tests/Golden/`) đã cập nhật.
+- [x] Không hồi quy hành vi tool dưới enforcement budget.
 
 ---
 
@@ -214,10 +214,10 @@ Thêm `src/shared/Infrastructure/ResponseSpillWriter.cs` (format-agnostic) + wri
 
 ## B2.4 — DoD Bước 2
 
-- [ ] `ResponseSpillWriter` + writer SQLite/NDJSON/JSON/text, có test (không cần Revit).
-- [ ] 8 tool nhóm 4 nhận `output=inline|file`; mặc định `inline` giữ nguyên hành vi B1; schema tool cập nhật.
-- [ ] `output=file` trả envelope đúng shape, envelope tự dưới budget, preview cắt đúng.
-- [ ] Cleanup >24h + cap ~50 file, có test cho logic chọn file xoá.
-- [ ] `send_code` + `run_baked_tool`: auto-spill khi >budget, không `success=false`, có test.
-- [ ] Golden tool-list cập nhật cho param `output` mới.
-- [ ] Toàn bộ test xanh. **CHỐT DỪNG #3** — review User + Claude trước khi coi xong.
+- [x] `ResponseSpillWriter` + writer SQLite/NDJSON/JSON/text, có test (không cần Revit).
+- [x] 8 tool nhóm 4 nhận `output=inline|file`; mặc định `inline` giữ nguyên hành vi B1; schema tool cập nhật.
+- [x] `output=file` trả envelope đúng shape, envelope tự dưới budget, preview cắt đúng.
+- [x] Cleanup >24h + cap 50 file, có test cho logic chọn file xoá.
+- [x] `send_code` + `run_baked_tool`: auto-spill khi >budget, không `success=false`, có test.
+- [x] Golden tool-list cập nhật cho param `output` mới.
+- [x] Toàn bộ 468 test xanh. **CHỐT DỪNG #3** — đang chờ review User + Claude trước khi coi xong.

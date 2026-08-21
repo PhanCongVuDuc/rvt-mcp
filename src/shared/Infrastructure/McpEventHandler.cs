@@ -146,6 +146,24 @@ namespace RvtMcp.Plugin
 
                     var result = command.Execute(app, request.ParamsJson);
                     sw.Stop();
+
+                    // Explicit output=file and oversized arbitrary-code responses spill before
+                    // logging and guarding, so neither the wire nor logs retain the bulk body.
+                    var preSpillResponse = JsonConvert.SerializeObject(new
+                    {
+                        id = request.Id,
+                        success = result.Success,
+                        data = result.Data,
+                        error = result.Error
+                    });
+                    var spillOutcome = new ResponseSpillProcessor(new ResponseSpillWriter()).Process(
+                        request.CommandName,
+                        request.ParamsJson,
+                        result.Success,
+                        result.Data,
+                        preSpillResponse);
+                    result.Data = spillOutcome.Data;
+
                     // responseData is the redacted view used ONLY for session log + summary.
                     // The wire response (below) uses result.Data raw so the agent sees real values.
                     var responseData = McpResponsePrivacy.RedactDataForResponse(request.CommandName, result.Data);
