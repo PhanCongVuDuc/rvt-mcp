@@ -89,7 +89,9 @@ The **server** is version-agnostic — it just forwards JSON envelopes. All Revi
 6. Response envelope travels back up the same pipe.
 7. `ToolGateway` resolves the `TaskCompletionSource`; MCP tool method returns the DTO.
 
-Timeout: 30s per request on the server side. Listener cancels pending requests on plugin shutdown.
+Timeout: 60s per request. On expiry the plugin completes the request TCS so a late UI-thread result is skipped; the error tells agents not to retry clash/export until Revit finishes. Listener cancels pending requests on plugin shutdown.
+
+Wire JSON over 1 MiB is rejected (100 KB logs an S4 warning). Narrow filters / `max_results` instead of retrying the same dump.
 
 ## Progressive disclosure (A3)
 
@@ -97,7 +99,7 @@ Tools are grouped into 10 toolset classes (`QueryTools`, `CreateTools`, `ViewToo
 
 ## Batch execution (A6)
 
-`batch_execute` is the one MCP tool that forwards a list. Plugin-side, `BatchExecuteHandler` opens a `TransactionGroup` and dispatches each sub-command through the normal handler path (so each handler gets its own inner `Transaction` — Revit forbids nested transactions, but a group around them is allowed). On success it calls `Assimilate()` to merge everything into one undo step. On failure it calls `RollBack()` unless `continueOnError=true`. Iteration logic is factored into `BatchExecutor.Run` so it's unit-testable without a live Revit document.
+`batch_execute` is the one MCP tool that forwards a list. Cap is **20** sub-commands (server and plugin fail-fast). Plugin-side, `BatchExecuteHandler` opens a `TransactionGroup` and dispatches each sub-command through the normal handler path (so each handler gets its own inner `Transaction` — Revit forbids nested transactions, but a group around them is allowed). On success it calls `Assimilate()` to merge everything into one undo step. On failure it calls `RollBack()` unless `continueOnError=true`. Iteration logic is factored into `BatchExecutor.Run` so it's unit-testable without a live Revit document. The UI handler processes **one live command per ExternalEvent** and re-raises if the queue still has work.
 
 ## ToolBaker pipeline
 

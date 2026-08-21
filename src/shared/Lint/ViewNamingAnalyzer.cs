@@ -80,8 +80,11 @@ namespace RvtMcp.Plugin.Lint
         /// <summary>Coverage threshold for a pattern to qualify as `dominant`.</summary>
         public const double DominantCoverageThreshold = 0.50;
 
-        public static NamingAnalysis Analyze(IEnumerable<string> viewNames)
+        public static NamingAnalysis Analyze(IEnumerable<string> viewNames, int outlierLimit = 20)
         {
+            if (outlierLimit < 0)
+                throw new ArgumentOutOfRangeException(nameof(outlierLimit));
+
             var names = viewNames?.Where(n => !string.IsNullOrWhiteSpace(n)).ToArray() ?? new string[0];
             if (names.Length == 0)
             {
@@ -133,7 +136,7 @@ namespace RvtMcp.Plugin.Lint
                         EditDistance = Levenshtein(x.Name, dominantExample)
                     })
                     .OrderBy(o => o.EditDistance)
-                    .Take(20)
+                    .Take(outlierLimit)
                     .ToList();
                 outliers = candidates;
             }

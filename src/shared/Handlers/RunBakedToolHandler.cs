@@ -8,7 +8,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "run_baked_tool";
         public string Description => "Execute a baked tool by name";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""name"":{""type"":""string""},""params"":{""type"":""object""}},""required"":[""name""]}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""name"":{""type"":""string""},""params"":{""type"":""object""},""output"":{""type"":""string"",""enum"": [""inline"", ""file""],""default"":""inline""}},""required"":[""name""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {

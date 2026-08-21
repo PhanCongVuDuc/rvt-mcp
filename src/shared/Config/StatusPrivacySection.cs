@@ -16,7 +16,7 @@ namespace RvtMcp.Plugin
             var sb = new StringBuilder();
             sb.AppendLine("Privacy & bake (plugin-visible config)");
             sb.AppendLine($"  Toast notifications: {OnOff(toastEnabled)}  (ribbon toggle)");
-            sb.AppendLine($"  ToolBaker tools: {OnOff(config.EnableToolbakerOrDefault)}  (send_code + list/run baked)");
+            sb.AppendLine($"  ToolBaker tools: {OnOff(config.EnableToolbakerOrDefault)}  (list/run baked; send_code follows this flag too)");
             sb.AppendLine($"  Adaptive bake suggestions: {OnOff(config.EnableAdaptiveBakeOrDefault)}");
             sb.AppendLine($"  Cache send_code bodies (for bake clusters): {OnOff(config.CacheSendCodeBodiesOrDefault)}");
 

@@ -23,7 +23,8 @@ namespace RvtMcp.Plugin.Handlers
     ""include_quantities"": { ""type"": ""boolean"", ""default"": true },
     ""include_cost"": { ""type"": ""boolean"", ""default"": false },
     ""output_path"": { ""type"": ""string"" },
-    ""limit_per_category"": { ""type"": ""integer"", ""default"": 500, ""minimum"": 1, ""maximum"": 5000 }
+    ""limit_per_category"": { ""type"": ""integer"", ""default"": 500, ""minimum"": 1, ""maximum"": 5000 },
+    ""output"": { ""type"": ""string"", ""enum"": [""inline"", ""file""], ""default"": ""inline"" }
   }
 }";
 

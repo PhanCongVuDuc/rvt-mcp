@@ -259,9 +259,9 @@ namespace RvtMcp.Server
         // signal for queries like "list Revit tools"), then a compact toolset-name index
         // — 2 examples per toolset — so semantic search for individual ops still resolves.
         private const string ServerInstructionsText =
-@"rvt-mcp — MCP gateway for Autodesk Revit 2022-2027. Use whenever user works with .rvt, Revit, BIM, walls, doors, windows, floors, ceilings, roofs, levels, grids, rooms, sheets, schedules, families, views, view templates, view filters, MEP (ducts, pipes, cable trays, conduits, HVAC, lighting, plumbing), structural (columns, beams, foundations, rebar), dimensions, tags, annotations, filled regions, keynotes, worksets, phases, linked models, parameters, materials, IFC, DWG, NWC, PDF.
+@"rvt-mcp — MCP gateway for Autodesk Revit 2022-2027. Use whenever user works with .rvt, Revit, BIM, walls, doors, windows, floors, ceilings, roofs, levels, grids, rooms, sheets, schedules, families, views, view templates, view filters, MEP (ducts, pipes, trays, conduits, HVAC, lighting, plumbing), structural (columns, beams, foundations, rebar), dimensions, tags, annotations, keynotes, worksets, phases, links, parameters, materials, IFC, DWG, NWC, PDF.
 
-Multi-Revit: if >1 Revit may be open, call revit_list_available_targets THEN revit_switch_target. Versions are 4-digit calendar years (2022..2027), NOT R-codes.
+Multi-Revit: if >1 Revit may be open, call revit_list_available_targets THEN revit_switch_target. Years are 2022-2027, not R-codes. Defaults: query,create,view,meta. --toolsets all for export/clash. Do not retry clash/export after 60s timeout.
 
 Tools (prefix revit_<verb>_<noun>, lengths in mm):
 - query: get_current_view_info, ai_element_filter, get_element_details
@@ -284,10 +284,18 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 - organization: apply_view_template, save_selection
 - workflows: workflow_clash_review, workflow_model_audit
 - structural: create_structural_column, create_rebar_set
-- kei: get_active_project_db, query_kei_database, write_kei_database, import_project_equipment
-- meta: send_code_to_revit, batch_execute, list_available_targets, get_current_target, switch_target
+- kei: query_kei_database, import_project_equipment
+- meta: send_code_to_revit, batch_execute, list_available_targets, switch_target
 - lint: find_untagged_elements, get_model_warnings_summary
 - toolbaker: list_baked_tools, run_baked_tool";
+
+        private static bool IncludeSendCode(HashSet<string> enabled, RvtMcpConfig config)
+        {
+            var bakerOn = config == null || config.EnableToolbakerOrDefault;
+            var writable = config == null || !config.ReadOnlyOrDefault;
+            return bakerOn && writable
+                && (enabled.Contains("meta") || enabled.Contains("toolbaker"));
+        }
 
         private static IMcpServerBuilder RegisterToolsets(IMcpServerBuilder mcp, HashSet<string> enabled, RvtMcpConfig config)
         {
@@ -313,6 +321,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             if (enabled.Contains("toolbaker"))  mcp = mcp.WithTools<ToolbakerTools>();
             if (enabled.Contains("toolbaker") && config?.EnableAdaptiveBakeOrDefault == true)
                 mcp = mcp.WithTools<AdaptiveBakeTools>();
+            if (IncludeSendCode(enabled, config)) mcp = mcp.WithTools<SendCodeTools>();
             if (enabled.Contains("meta"))       mcp = mcp.WithTools<MetaTools>();
             if (enabled.Contains("lint"))       mcp = mcp.WithTools<LintTools>();
             if (enabled.Contains("structural")) mcp = mcp.WithTools<StructuralTools>();
@@ -345,6 +354,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             if (enabled.Contains("toolbaker"))  types.Add(typeof(ToolbakerTools));
             if (enabled.Contains("toolbaker") && config?.EnableAdaptiveBakeOrDefault == true)
                 types.Add(typeof(AdaptiveBakeTools));
+            if (IncludeSendCode(enabled, config)) types.Add(typeof(SendCodeTools));
             if (enabled.Contains("meta"))       types.Add(typeof(MetaTools));
             if (enabled.Contains("lint"))       types.Add(typeof(LintTools));
             if (enabled.Contains("structural")) types.Add(typeof(StructuralTools));
@@ -541,6 +551,9 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             if (response.Value<bool>("success"))
             {
                 var data = response["data"] as JObject ?? new JObject();
+                var responseWarning = response.Value<string>("warning");
+                if (!string.IsNullOrWhiteSpace(responseWarning))
+                    data["_response_warning"] = responseWarning;
                 Session?.RecordCall(command, paramsJson, true, sw.ElapsedMilliseconds,
                     resultJson: data.ToString(Formatting.None));
                 UsageLogger?.RecordToolCall(command, paramsJson, true);
@@ -577,12 +590,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_selected_elements", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Get currently selected Revit elements. Returns array of {id, name, category, typeName}. Call before operating on user selection (color, delete, move).")]
-        public static async Task<string> GetSelectedElements()
+        [McpServerTool(Name = "revit_get_selected_elements", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Get currently selected Revit elements with paging. Use startIndex + maxResults (default 200, hard max 1000).")]
+        public static async Task<string> GetSelectedElements(int startIndex = 0, int maxResults = 200)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("get_selected_elements");
+                var result = await ToolGateway.SendToRevit("get_selected_elements", new { start_index = startIndex, max_results = maxResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -621,12 +634,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_material_quantities", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Sum material quantities (area m², volume m³) by category. Required: category — human name ('Walls', 'Floors' — NOT 'OST_Walls').")]
-        public static async Task<string> GetMaterialQuantities(string category)
+        [McpServerTool(Name = "revit_get_material_quantities", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Sum material quantities (area m², volume m³) by category. Narrow with materialNameFilter and page with startIndex + maxResults (hard max 1000).")]
+        public static async Task<string> GetMaterialQuantities(string category, string materialNameFilter = "", int startIndex = 0, int maxResults = 200)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("get_material_quantities", new { category });
+                var result = await ToolGateway.SendToRevit("get_material_quantities", new { category, material_name_filter = materialNameFilter, start_index = startIndex, max_results = maxResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -698,34 +711,34 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_group_members", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read a group instance and its member elements with category, type, owner view, and pinned state.")]
-        public static async Task<string> GetGroupMembers(long groupId)
+        [McpServerTool(Name = "revit_get_group_members", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read a group instance and a page of member elements. Use startIndex + maxResults (hard max 1000).")]
+        public static async Task<string> GetGroupMembers(long groupId, int startIndex = 0, int maxResults = 200)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("get_group_members", new { groupId });
+                var result = await ToolGateway.SendToRevit("get_group_members", new { groupId, start_index = startIndex, max_results = maxResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_list_assemblies", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("List assembly instances with type, naming category, member count, and optional member ids.")]
-        public static async Task<string> ListAssemblies(bool includeMembers = false)
+        [McpServerTool(Name = "revit_list_assemblies", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("List a page of assembly instances. maxMembersPerAssembly caps optional member-id previews.")]
+        public static async Task<string> ListAssemblies(bool includeMembers = false, int startIndex = 0, int maxResults = 100, int maxMembersPerAssembly = 50)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("list_assemblies", new { includeMembers });
+                var result = await ToolGateway.SendToRevit("list_assemblies", new { includeMembers, start_index = startIndex, max_results = maxResults, max_members_per_assembly = maxMembersPerAssembly });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_assembly_members", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read an assembly instance and its member elements with category, type, group, and workset ids.")]
-        public static async Task<string> GetAssemblyMembers(long assemblyId)
+        [McpServerTool(Name = "revit_get_assembly_members", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read an assembly instance and a page of members. Use startIndex + maxResults (hard max 1000).")]
+        public static async Task<string> GetAssemblyMembers(long assemblyId, int startIndex = 0, int maxResults = 200)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("get_assembly_members", new { assemblyId });
+                var result = await ToolGateway.SendToRevit("get_assembly_members", new { assemblyId, start_index = startIndex, max_results = maxResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -880,12 +893,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_load_family_from_path", Destructive = false), System.ComponentModel.Description("Load an .rfa family file from disk into the active document. Returns loaded family id and the new symbol/type ids. overwriteExisting controls IFamilyLoadOptions.OnFamilyFound; overwriteParameterValues forwards to the same callback.")]
-        public static async Task<string> LoadFamilyFromPath(string path, bool overwriteExisting = true, bool overwriteParameterValues = false)
+        [McpServerTool(Name = "revit_load_family_from_path", Destructive = false), System.ComponentModel.Description("Load an .rfa family. Response is compact by default; set includeSymbols=true for a bounded symbol preview (maxSymbolResults hard max 1000).")]
+        public static async Task<string> LoadFamilyFromPath(string path, bool overwriteExisting = true, bool overwriteParameterValues = false, bool includeSymbols = false, int maxSymbolResults = 200)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("load_family_from_path", new { path, overwrite_existing = overwriteExisting, overwrite_parameter_values = overwriteParameterValues });
+                var result = await ToolGateway.SendToRevit("load_family_from_path", new { path, overwrite_existing = overwriteExisting, overwrite_parameter_values = overwriteParameterValues, include_symbols = includeSymbols, max_symbol_results = maxSymbolResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -925,12 +938,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_audit_families", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read-only audit of loaded families. Detects unused families (zero instances), in-place families, duplicate names, and high type-count families. Returns recommendations. Tunable include flags + highTypeCountThreshold.")]
-        public static async Task<string> AuditFamilies(bool includeUnused = true, bool includeInplace = true, bool includeDuplicateNames = true, bool includeHighTypeCount = true, int highTypeCountThreshold = 20)
+        [McpServerTool(Name = "revit_audit_families", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read-only family audit with bounded sections. Page each section with startIndex + limitPerSection (hard max 500).")]
+        public static async Task<string> AuditFamilies(bool includeUnused = true, bool includeInplace = true, bool includeDuplicateNames = true, bool includeHighTypeCount = true, int highTypeCountThreshold = 20, int startIndex = 0, int limitPerSection = 100)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("audit_families", new { include_unused = includeUnused, include_inplace = includeInplace, include_duplicate_names = includeDuplicateNames, include_high_type_count = includeHighTypeCount, high_type_count_threshold = highTypeCountThreshold });
+                var result = await ToolGateway.SendToRevit("audit_families", new { include_unused = includeUnused, include_inplace = includeInplace, include_duplicate_names = includeDuplicateNames, include_high_type_count = includeHighTypeCount, high_type_count_threshold = highTypeCountThreshold, start_index = startIndex, limit_per_section = limitPerSection });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -958,12 +971,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_list_family_types_in_family", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Deep listing of all types within ONE family, including each type's parameter values (unit-converted to mm/m²/m³/deg). includeBuiltInOnly=true filters out shared/project params. Returns is_active per type. More detailed than get_available_family_types.")]
-        public static async Task<string> ListFamilyTypesInFamily(long? familyId = null, string familyName = "", bool includeParameterValues = true, bool includeBuiltInOnly = false)
+        [McpServerTool(Name = "revit_list_family_types_in_family", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("List a bounded page of types in one family. Use parameterNames to return only needed values; maxTypes hard max 500.")]
+        public static async Task<string> ListFamilyTypesInFamily(long? familyId = null, string familyName = "", bool includeParameterValues = true, bool includeBuiltInOnly = false, int startIndex = 0, int maxTypes = 100, string[] parameterNames = null)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("list_family_types_in_family", new { family_id = familyId, family_name = familyName, include_parameter_values = includeParameterValues, include_built_in_only = includeBuiltInOnly });
+                var result = await ToolGateway.SendToRevit("list_family_types_in_family", new { family_id = familyId, family_name = familyName, include_parameter_values = includeParameterValues, include_built_in_only = includeBuiltInOnly, start_index = startIndex, max_types = maxTypes, parameter_names = parameterNames });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1078,12 +1091,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_color_elements", Destructive = false, Idempotent = true), System.ComponentModel.Description("Color-code elements by parameter value in current view. Auto-assigns distinct colors per unique value. category uses human name ('Walls', NOT 'OST_Walls'). Example: category='Pipes', parameterName='System Type' → each system type gets a different color.")]
-        public static async Task<string> ColorElements(string category, string parameterName)
+        [McpServerTool(Name = "revit_color_elements", Destructive = false, Idempotent = true), System.ComponentModel.Description("Color-code all matching elements by parameter value. maxGroups caps response detail only; mutation summary remains complete.")]
+        public static async Task<string> ColorElements(string category, string parameterName, int maxGroups = 100)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("color_elements", new { category, parameterName });
+                var result = await ToolGateway.SendToRevit("color_elements", new { category, parameterName, max_groups = maxGroups });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1175,12 +1188,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_analyze_sheet_layout", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Analyze a sheet's title block + viewport layout in mm. Provide sheetNumber (e.g. 'ISO-005') or sheetId; if neither, uses active view when it is a sheet. Returns title block size, viewport centers, widths, heights, scales.")]
-        public static async Task<string> AnalyzeSheetLayout(string sheetNumber = "", long? sheetId = null)
+        [McpServerTool(Name = "revit_analyze_sheet_layout", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Analyze title block and a bounded viewport page in mm. Use startViewport + maxViewports (hard max 500).")]
+        public static async Task<string> AnalyzeSheetLayout(string sheetNumber = "", long? sheetId = null, int startViewport = 0, int maxViewports = 100)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("analyze_sheet_layout", new { sheetNumber, sheetId });
+                var result = await ToolGateway.SendToRevit("analyze_sheet_layout", new { sheetNumber, sheetId, start_viewport = startViewport, max_viewports = maxViewports });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1291,18 +1304,18 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     [McpServerToolType, Toolset("export")]
     public class ExportTools
     {
-        [McpServerTool(Name = "revit_export_room_data", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export all rooms. Returns array of {name, number, area (m²), perimeter, level, department, volume (m³)}. For space analysis and reporting.")]
-        public static async Task<string> ExportRoomData()
+        [McpServerTool(Name = "revit_export_room_data", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export all rooms. output=inline returns DTO data; output=file writes SQLite to a local same-machine absolute path with schema and bounded preview. Remote clients can use preview but cannot read the local file.")]
+        public static async Task<string> ExportRoomData(string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("export_room_data");
+                var result = await ToolGateway.SendToRevit("export_room_data", new { output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_pdf", Destructive = false), System.ComponentModel.Description("Export sheets or views to PDF. outputFolder must be an existing absolute path. viewIds defaults to the active view. combine=true produces one combined PDF.")]
+        [McpServerTool(Name = "revit_export_pdf", Destructive = false), System.ComponentModel.Description("Export sheets or views to PDF. outputFolder must be an existing absolute path. viewIds defaults to the active view. combine=true produces one combined PDF. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ExportPdf(string outputFolder, long[] viewIds = null, bool combine = false, string fileName = "")
         {
             try
@@ -1313,7 +1326,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_dwg", Destructive = false), System.ComponentModel.Description("Export sheets or views to AutoCAD DWG. outputFolder must be an existing absolute path. viewIds defaults to the active view. settingsName optionally selects a saved ExportDWGSettings.")]
+        [McpServerTool(Name = "revit_export_dwg", Destructive = false), System.ComponentModel.Description("Export sheets or views to AutoCAD DWG. outputFolder must be an existing absolute path. viewIds defaults to the active view. settingsName optionally selects a saved ExportDWGSettings. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ExportDwg(string outputFolder, long[] viewIds = null, string settingsName = "", string fileNamePrefix = "")
         {
             try
@@ -1324,7 +1337,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_dgn", Destructive = false), System.ComponentModel.Description("Export sheets or views to MicroStation DGN. outputFolder must be an existing absolute path. viewIds defaults to the active view.")]
+        [McpServerTool(Name = "revit_export_dgn", Destructive = false), System.ComponentModel.Description("Export sheets or views to MicroStation DGN. outputFolder must be an existing absolute path. viewIds defaults to the active view. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ExportDgn(string outputFolder, long[] viewIds = null, string fileNamePrefix = "")
         {
             try
@@ -1335,7 +1348,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_dwf", Destructive = false), System.ComponentModel.Description("Export sheets or views to Autodesk DWF/DWFx. outputFolder must be an existing absolute path. viewIds defaults to the active view. useDwfx=true exports DWFx.")]
+        [McpServerTool(Name = "revit_export_dwf", Destructive = false), System.ComponentModel.Description("Export sheets or views to Autodesk DWF/DWFx. outputFolder must be an existing absolute path. viewIds defaults to the active view. useDwfx=true exports DWFx. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ExportDwf(string outputFolder, long[] viewIds = null, string fileName = "", bool useDwfx = false)
         {
             try
@@ -1346,7 +1359,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_ifc", Destructive = false), System.ComponentModel.Description("Export the model to IFC. outputFolder must be an existing absolute path. ifcVersion: IFC2x3|IFC4|default.")]
+        [McpServerTool(Name = "revit_export_ifc", Destructive = false), System.ComponentModel.Description("Export the model to IFC. outputFolder must be an existing absolute path. ifcVersion: IFC2x3|IFC4|default. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ExportIfc(string outputFolder, string fileName, string ifcVersion = "default")
         {
             try
@@ -1357,7 +1370,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_nwc", Destructive = false), System.ComponentModel.Description("Export the model to Navisworks NWC. outputFolder must be an existing absolute path. Optional exportScopeViewId scopes the export to one view. Requires the Navisworks NWC exporter add-in installed.")]
+        [McpServerTool(Name = "revit_export_nwc", Destructive = false), System.ComponentModel.Description("Export the model to Navisworks NWC. outputFolder must be an existing absolute path. Optional exportScopeViewId scopes the export to one view. Requires the Navisworks NWC exporter add-in installed. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ExportNwc(string outputFolder, string fileName, long? exportScopeViewId = null)
         {
             try
@@ -1379,7 +1392,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_gbxml", Destructive = false), System.ComponentModel.Description("Export the model's energy analytical data to gbXML. outputFolder must be an existing absolute path. Requires rooms/spaces with energy settings.")]
+        [McpServerTool(Name = "revit_export_gbxml", Destructive = false), System.ComponentModel.Description("Export the model's energy analytical data to gbXML. outputFolder must be an existing absolute path. Requires rooms/spaces with energy settings. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ExportGbxml(string outputFolder, string fileName)
         {
             try
@@ -1423,7 +1436,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_batch_export_sheets", Destructive = false), System.ComponentModel.Description("Export many sheets at once to PDF or DWG. outputFolder must be an existing absolute path. format: pdf|dwg. sheetIds defaults to ALL sheets; sheetNumberFilter narrows by sheet-number substring.")]
+        [McpServerTool(Name = "revit_batch_export_sheets", Destructive = false), System.ComponentModel.Description("Export many sheets at once to PDF or DWG. outputFolder must be an existing absolute path. format: pdf|dwg. sheetIds defaults to ALL sheets; sheetNumberFilter narrows by sheet-number substring. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> BatchExportSheets(string outputFolder, string format, long[] sheetIds = null, string sheetNumberFilter = "")
         {
             try
@@ -1434,12 +1447,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_list_export_settings", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("List saved export/print configurations: DWG export setups, named print settings, and view/sheet sets.")]
-        public static async Task<string> ListExportSettings()
+        [McpServerTool(Name = "revit_list_export_settings", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("List bounded export settings. kindFilter: all|dwg|print|view_sheet_set; use startIndex + maxResults.")]
+        public static async Task<string> ListExportSettings(string kindFilter = "all", int startIndex = 0, int maxResults = 50)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("list_export_settings", new { });
+                var result = await ToolGateway.SendToRevit("list_export_settings", new { kind_filter = kindFilter, start_index = startIndex, max_results = maxResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1456,12 +1469,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_print_settings", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Report the document's PrintManager state and all named print settings + view/sheet sets.")]
-        public static async Task<string> GetPrintSettings()
+        [McpServerTool(Name = "revit_get_print_settings", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Report PrintManager state and bounded setting lists. kindFilter: all|print|view_sheet_set; use startIndex + maxResults.")]
+        public static async Task<string> GetPrintSettings(string kindFilter = "all", int startIndex = 0, int maxResults = 50)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("get_print_settings", new { });
+                var result = await ToolGateway.SendToRevit("get_print_settings", new { kind_filter = kindFilter, start_index = startIndex, max_results = maxResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1632,12 +1645,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     [McpServerToolType, Toolset("mep")]
     public class MepTools
     {
-        [McpServerTool(Name = "revit_detect_system_elements", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Walk an MEP system from a seed element. Traverses connectors to find all pipes, fittings, accessories, equipment in the same system. Returns IDs grouped by category + bounding box in mm. Fetch seed via get_selected_elements.")]
-        public static async Task<string> DetectSystemElements(long elementId)
+        [McpServerTool(Name = "revit_detect_system_elements", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Walk an MEP system and page IDs per category with startElement + maxElements (hard max 5000).")]
+        public static async Task<string> DetectSystemElements(long elementId, int startElement = 0, int maxElements = 500)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("detect_system_elements", new { elementId });
+                var result = await ToolGateway.SendToRevit("detect_system_elements", new { elementId, start_element = startElement, max_elements = maxElements });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1776,12 +1789,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_panel_schedule", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read an electrical panel's circuit schedule: panel metadata, voltage, and the list of circuits with rating, load (VA), poles. Identify by panelId or panelName.")]
-        public static async Task<string> GetPanelSchedule(long? panelId = null, string panelName = "")
+        [McpServerTool(Name = "revit_get_panel_schedule", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read panel metadata and a bounded circuit page. Use startCircuit + maxCircuits (hard max 1000).")]
+        public static async Task<string> GetPanelSchedule(long? panelId = null, string panelName = "", int startCircuit = 0, int maxCircuits = 100)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("get_panel_schedule", new { panel_id = panelId, panel_name = panelName });
+                var result = await ToolGateway.SendToRevit("get_panel_schedule", new { panel_id = panelId, panel_name = panelName, start_circuit = startCircuit, max_circuits = maxCircuits });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1967,10 +1980,10 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
         }
     }
 
-    [McpServerToolType, Toolset("toolbaker")]
-    public class ToolbakerTools
+    [McpServerToolType, Toolset("meta")]
+    public class SendCodeTools
     {
-        [McpServerTool(Name = "revit_send_code_to_revit"), System.ComponentModel.Description("Compile + run C# inside Revit for workflows not covered by typed tools. Variables: doc (Document), uidoc (UIDocument), app (UIApplication). Write body only, auto-wrapped in static Run(UIApplication). Must end with 'return ...;'. Namespaces: System, System.Linq, System.Collections.Generic, Autodesk.Revit.DB, Autodesk.Revit.UI. Common patterns: FilteredElementCollector for queries, Transaction for mutations, UnitUtils.ConvertFromInternalUnits(value, UnitTypeId.Millimeters), uidoc.Selection.SetElementIds(), OverrideGraphicSettings.")]
+        [McpServerTool(Name = "revit_send_code_to_revit"), System.ComponentModel.Description("Compile + run C# inside Revit for workflows not covered by typed tools. Variables: doc (Document), uidoc (UIDocument), app (UIApplication). Write body only, auto-wrapped in static Run(UIApplication). Must end with 'return ...;'. Output above 700 KiB auto-spills to a local same-machine file with schema and preview; there is no output parameter. Remote clients receive preview but cannot read the local file. Namespaces: System, System.Linq, System.Collections.Generic, Autodesk.Revit.DB, Autodesk.Revit.UI.")]
         public static async Task<string> SendCodeToRevit(string code)
         {
             try
@@ -1980,15 +1993,18 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
+    }
 
+    [McpServerToolType, Toolset("toolbaker")]
+    public class ToolbakerTools
+    {
         [McpServerTool(Name = "revit_list_baked_tools", ReadOnly = true, Idempotent = true), System.ComponentModel.Description(
-            "List all baked tools with name, description, usage count, creation date. " +
-            "Call before run_baked_tool to discover available tools.")]
-        public static async Task<string> ListBakedTools()
+            "List baked tools with nameFilter and bounded paging. Use startIndex + limit (hard max 500).")]
+        public static async Task<string> ListBakedTools(string nameFilter = "", int startIndex = 0, int limit = 100)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("list_baked_tools");
+                var result = await ToolGateway.SendToRevit("list_baked_tools", new { name_filter = nameFilter, start_index = startIndex, limit });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1996,14 +2012,14 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 
         [McpServerTool(Name = "revit_run_baked_tool"), System.ComponentModel.Description(
             "Run a baked tool by name. Call list_baked_tools first to discover. " +
-            "Params: name (baked tool name), params (object, tool-specific).")]
-        public static async Task<string> RunBakedTool(string name, object @params = null)
+            "Params: name, params (tool-specific), output=inline|file. File mode writes a sniffed local same-machine artifact; oversized inline output auto-spills. Remote clients receive preview only.")]
+        public static async Task<string> RunBakedTool(string name, object @params = null, string output = "inline")
         {
             var revitVersionBeforeConnect = ToolGateway.CurrentRevitVersion ?? AuthToken.Target ?? "unknown";
             try
             {
                 var normalizedParams = NormalizeRunBakedToolParams(@params);
-                var result = await ToolGateway.SendToRevit("run_baked_tool", new { name, @params = normalizedParams });
+                var result = await ToolGateway.SendToRevit("run_baked_tool", new { name, @params = normalizedParams, output });
                 var revitVersion = ToolGateway.CurrentRevitVersion ?? revitVersionBeforeConnect;
                 RecordBakedToolRun(name, revitVersion, success: true, error: null);
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
@@ -2074,15 +2090,15 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     public class AdaptiveBakeTools
     {
         [McpServerTool(Name = "revit_list_bake_suggestions", ReadOnly = true, Idempotent = true), System.ComponentModel.Description(
-            "List adaptive ToolBaker suggestions. Returns suggestions with id, title, source, score, state, output choices, and creation time.")]
-        public static string ListBakeSuggestions()
+            "List bounded adaptive ToolBaker suggestions. Filter by state and page with startIndex + limit (hard max 500).")]
+        public static string ListBakeSuggestions(string state = "", int startIndex = 0, int limit = 100)
         {
             try
             {
                 var paths = new BakePaths();
                 using var db = new BakeDb(paths);
                 db.Migrate();
-                return ListBakeSuggestionsHandler.Handle(db, ToolGateway.UsageLogger);
+                return ListBakeSuggestionsHandler.Handle(db, ToolGateway.UsageLogger, state, startIndex, limit);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
@@ -2131,16 +2147,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     [McpServerToolType, Toolset("meta")]
     public class MetaTools
     {
-        [McpServerTool(Name = "revit_show_message", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Show a Revit TaskDialog. For connection tests or user notifications. Both 'message' and 'title' are optional — omit for default greeting.")]
-        public static async Task<string> ShowMessage(string message = null, string title = null)
+        [McpServerTool(Name = "revit_show_message", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Show a Revit TaskDialog. Message echo is off by default; opt in with echoMessage and cap it with maxEchoChars.")]
+        public static async Task<string> ShowMessage(string message = null, string title = null, bool echoMessage = false, int maxEchoChars = 1024)
         {
             try
             {
-                object parameters = null;
-                if (!string.IsNullOrWhiteSpace(message) || !string.IsNullOrWhiteSpace(title))
-                {
-                    parameters = new { message, title };
-                }
+                var parameters = new { message, title, echo_message = echoMessage, max_echo_chars = maxEchoChars };
                 var result = await ToolGateway.SendToRevit("show_message", parameters);
                 return JsonConvert.SerializeObject(result);
             }
@@ -2298,17 +2310,26 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 
         [McpServerTool(Name = "revit_batch_execute"), System.ComponentModel.Description(
             "Run multiple MCP commands atomically inside one Revit TransactionGroup (single undo on success). " +
+            "At most 20 commands; split larger jobs. " +
             "Input: commands — JSON array of {command, params}, e.g. " +
             "'[{\"command\":\"create_level\",\"params\":{\"elevation\":3000}}, " +
             "{\"command\":\"create_grid\",\"params\":{\"startX\":0,\"startY\":0,\"endX\":5000,\"endY\":0}}]'. " +
             "On any failure the whole group rolls back unless continueOnError=true. " +
-            "Returns: {results: [{index, ok, data|error}], rolledBack}.")]
-        public static async Task<string> BatchExecute(string commands, bool continueOnError = false)
+            "Returns: {results: [{index, ok, data|error}], rolledBack}. output=file writes NDJSON to a local same-machine absolute path with bounded preview; remote clients receive preview only.")]
+        public static async Task<string> BatchExecute(string commands, bool continueOnError = false, string output = "inline")
         {
             try
             {
                 var parsed = JArray.Parse(commands);
-                var result = await ToolGateway.SendToRevit("batch_execute", new { commands = parsed, continueOnError });
+                if (parsed.Count > 20) // keep in sync with BatchExecutor.MaxCommands
+                {
+                    return JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        error = "batch_execute supports at most 20 commands (got " + parsed.Count + "). Split the batch."
+                    }, Formatting.Indented);
+                }
+                var result = await ToolGateway.SendToRevit("batch_execute", new { commands = parsed, continueOnError, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -2645,12 +2666,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     [McpServerToolType, Toolset("lint")]
     public class LintTools
     {
-        [McpServerTool(Name = "revit_analyze_view_naming_patterns", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Infer dominant view-naming pattern from project. Returns patterns with coverage + outliers. Zero args. Use before suggest_view_name_corrections.")]
-        public static async Task<string> AnalyzeViewNamingPatterns()
+        [McpServerTool(Name = "revit_analyze_view_naming_patterns", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Infer naming patterns with bounded detail. Page outliers with startOutlier + maxOutliers; maxPatterns hard max 500.")]
+        public static async Task<string> AnalyzeViewNamingPatterns(int maxPatterns = 50, int startOutlier = 0, int maxOutliers = 20)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("analyze_view_naming_patterns");
+                var result = await ToolGateway.SendToRevit("analyze_view_naming_patterns", new { max_patterns = maxPatterns, start_outlier = startOutlier, max_outliers = maxOutliers });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -2678,13 +2699,13 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_model_warnings_summary", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Group doc.GetWarnings() by description; return count, severity, and optional example failing element ids per group. Params: include_examples (default true), max_examples_per_type (default 5).")]
+        [McpServerTool(Name = "revit_get_model_warnings_summary", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Group warnings by description with bounded types/examples. Use max_warning_types (hard max 1000) and max_examples_per_type (hard max 100).")]
         public static async Task<string> GetModelWarningsSummary(
-            bool include_examples = true, int max_examples_per_type = 5)
+            bool include_examples = true, int max_examples_per_type = 5, int max_warning_types = 200)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("get_model_warnings_summary", new { include_examples, max_examples_per_type });
+                var result = await ToolGateway.SendToRevit("get_model_warnings_summary", new { include_examples, max_examples_per_type, max_warning_types });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3219,8 +3240,8 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_material_takeoff", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate detailed material takeoff grouped by material and category")]
-        public static async Task<string> GetMaterialTakeoff(string categoryFilter = "", string materialNamePattern = "", bool includeElements = false, int elementLimit = 100)
+        [McpServerTool(Name = "revit_get_material_takeoff", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate material takeoff. output=file writes SQLite to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> GetMaterialTakeoff(string categoryFilter = "", string materialNamePattern = "", bool includeElements = false, int elementLimit = 100, string output = "inline")
         {
             try
             {
@@ -3229,7 +3250,8 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                     category_filter = categoryFilter,
                     material_name_pattern = materialNamePattern,
                     include_elements = includeElements,
-                    element_limit = elementLimit
+                    element_limit = elementLimit,
+                    output
                 });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
@@ -3289,7 +3311,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_clash_detection", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Detect clashes between elements of category A and category B")]
+        [McpServerTool(Name = "revit_clash_detection", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Detect clashes between elements of category A and category B. Scope with viewId and keep maxPairs low. Do not retry on 60s timeout; Revit may still be running the command.")]
         public static async Task<string> ClashDetection(string[] categoriesA, string[] categoriesB, long? viewId = null, string strategy = "bbox_then_solid", int maxPairs = 1000, int maxResults = 100)
         {
             try
@@ -3530,12 +3552,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_compute_room_finishes", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate ceiling/wall/floor finish areas (m2) and perimeter (mm) for rooms.")]
-        public static async Task<string> ComputeRoomFinishes(long[] roomIds = null, string levelName = "", bool includeEmpty = true, int limit = 5000)
+        [McpServerTool(Name = "revit_compute_room_finishes", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Calculate room finishes and boundary materials. output=file writes relational SQLite to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> ComputeRoomFinishes(long[] roomIds = null, string levelName = "", bool includeEmpty = true, int limit = 5000, string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("compute_room_finishes", new { room_ids = roomIds, level_name = levelName, include_empty = includeEmpty, limit });
+                var result = await ToolGateway.SendToRevit("compute_room_finishes", new { room_ids = roomIds, level_name = levelName, include_empty = includeEmpty, limit, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3552,12 +3574,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_tag_all_areas", Destructive = false), System.ComponentModel.Description("Place area tags for untagged areas in an area plan view.")]
-        public static async Task<string> TagAllAreas(long? areaPlanViewId = null, string areaPlanViewName = "", bool skipExisting = true, long? tagTypeId = null)
+        [McpServerTool(Name = "revit_tag_all_areas", Destructive = false), System.ComponentModel.Description("Place area tags for a bounded batch of untagged areas. limit hard max 5000; response is a compact mutation summary.")]
+        public static async Task<string> TagAllAreas(long? areaPlanViewId = null, string areaPlanViewName = "", bool skipExisting = true, long? tagTypeId = null, int limit = 500)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("tag_all_areas", new { area_plan_view_id = areaPlanViewId, area_plan_view_name = areaPlanViewName, skip_existing = skipExisting, tag_type_id = tagTypeId });
+                var result = await ToolGateway.SendToRevit("tag_all_areas", new { area_plan_view_id = areaPlanViewId, area_plan_view_name = areaPlanViewName, skip_existing = skipExisting, tag_type_id = tagTypeId, limit });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3747,12 +3769,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_export_shared_parameter_file", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export the content of a shared parameter file as structured DTO data.")]
-        public static async Task<string> ExportSharedParameterFile(string sharedParameterFilePath = "")
+        [McpServerTool(Name = "revit_export_shared_parameter_file", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Export a shared parameter file as structured DTO data. output=file writes JSON to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> ExportSharedParameterFile(string sharedParameterFilePath = "", string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("export_shared_parameter_file", new { sharedParameterFilePath });
+                var result = await ToolGateway.SendToRevit("export_shared_parameter_file", new { sharedParameterFilePath, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3817,34 +3839,34 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_delete_view_template", Destructive = true), System.ComponentModel.Description("Delete a view template from the project.")]
-        public static async Task<string> DeleteViewTemplate(long templateId, bool dryRun = true, bool clearFromViews = false)
+        [McpServerTool(Name = "revit_delete_view_template", Destructive = true), System.ComponentModel.Description("Delete a view template. maxUsedByViews caps dependent-view/deleted-id response previews.")]
+        public static async Task<string> DeleteViewTemplate(long templateId, bool dryRun = true, bool clearFromViews = false, int maxUsedByViews = 100)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("delete_view_template", new { templateId, dryRun, clearFromViews });
+                var result = await ToolGateway.SendToRevit("delete_view_template", new { templateId, dryRun, clearFromViews, max_used_by_views = maxUsedByViews });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_save_selection", Destructive = false), System.ComponentModel.Description("Save element IDs as a named selection filter element in the document.")]
-        public static async Task<string> SaveSelection(string name, long[] elementIds = null, bool replaceExisting = false, bool useActiveSelectionIfIdsOmitted = true)
+        [McpServerTool(Name = "revit_save_selection", Destructive = false), System.ComponentModel.Description("Save a named selection. IDs are omitted from the response by default; opt in with includeElementIds and maxElementIdResults.")]
+        public static async Task<string> SaveSelection(string name, long[] elementIds = null, bool replaceExisting = false, bool useActiveSelectionIfIdsOmitted = true, bool includeElementIds = false, int maxElementIdResults = 100)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("save_selection", new { name, elementIds, replaceExisting, useActiveSelectionIfIdsOmitted });
+                var result = await ToolGateway.SendToRevit("save_selection", new { name, elementIds, replaceExisting, useActiveSelectionIfIdsOmitted, include_element_ids = includeElementIds, max_element_id_results = maxElementIdResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_load_selection", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Load element IDs from a saved selection filter.")]
-        public static async Task<string> LoadSelection(string name = "", long? selectionId = null, bool includeElementSummary = false)
+        [McpServerTool(Name = "revit_load_selection", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Load a bounded page from a saved selection filter. Use startIndex + maxResults (hard max 1000).")]
+        public static async Task<string> LoadSelection(string name = "", long? selectionId = null, bool includeElementSummary = false, int startIndex = 0, int maxResults = 200)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("load_selection", new { name, selectionId, includeElementSummary });
+                var result = await ToolGateway.SendToRevit("load_selection", new { name, selectionId, includeElementSummary, start_index = startIndex, max_results = maxResults });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3931,12 +3953,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_workflow_data_roundtrip", Destructive = false), System.ComponentModel.Description("Export category parameter data to JSON/CSV and optionally import edited values back with dry-run validation.")]
-        public static async Task<string> WorkflowDataRoundtrip(string category, string export_path, string import_path = "", string mode = "export_only", bool dry_run = true, string key_field = "element_id", string[] parameter_names = null)
+        [McpServerTool(Name = "revit_workflow_data_roundtrip", Destructive = false), System.ComponentModel.Description("Export/import category parameter data with validation. output=file writes the response report as NDJSON to a local same-machine absolute path with bounded preview; remote clients receive preview only.")]
+        public static async Task<string> WorkflowDataRoundtrip(string category, string export_path, string import_path = "", string mode = "export_only", bool dry_run = true, string key_field = "element_id", string[] parameter_names = null, string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("workflow_data_roundtrip", new { category, export_path, import_path, mode, dry_run, key_field, parameter_names });
+                var result = await ToolGateway.SendToRevit("workflow_data_roundtrip", new { category, export_path, import_path, mode, dry_run, key_field, parameter_names, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -3964,12 +3986,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_workflow_takeoff_report", Destructive = false), System.ComponentModel.Description("Generate category, quantity, material, and optional cost takeoff reports with optional JSON/CSV export.")]
-        public static async Task<string> WorkflowTakeoffReport(string[] categories = null, bool include_materials = true, bool include_quantities = true, bool include_cost = false, string output_path = "", int limit_per_category = 500)
+        [McpServerTool(Name = "revit_workflow_takeoff_report", Destructive = false), System.ComponentModel.Description("Generate category, quantity, material, and optional cost takeoff reports. output=file writes relational SQLite to a local same-machine absolute path with schema and bounded preview; remote clients receive preview only.")]
+        public static async Task<string> WorkflowTakeoffReport(string[] categories = null, bool include_materials = true, bool include_quantities = true, bool include_cost = false, string output_path = "", int limit_per_category = 500, string output = "inline")
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("workflow_takeoff_report", new { categories, include_materials, include_quantities, include_cost, output_path, limit_per_category });
+                var result = await ToolGateway.SendToRevit("workflow_takeoff_report", new { categories, include_materials, include_quantities, include_cost, output_path, limit_per_category, output });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }

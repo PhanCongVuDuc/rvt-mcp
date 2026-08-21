@@ -83,8 +83,8 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 - TCP listener / Named Pipe listener on background thread
 - ConcurrentQueue<PendingRequest> with per-request TaskCompletionSource
 - ExternalEvent.Raise() marshals to Revit UI thread
-- try/catch per command in queue drain (no starvation)
-- Stale command guard: skip if TCS already completed (timeout/cancel)
+- One live command per ExternalEvent (re-Raise if the queue still has work); skip completed TCS (timeout/cancel)
+- Wire responses: agent-visible warning from 64 KiB, strong warning above 256 KiB; past the ~700 KiB enforcement budget (compact bytes; headroom below the 1 MiB delivered ceiling) reads reject with command-specific scope hints and completed mutations return compact `success=true` summaries. Eight approved bulk tools support `output=inline|file` to `%LOCALAPPDATA%\RvtMcp\spill\`; `send_code` and oversized `run_baked_tool` output auto-spill. Spill files are local same-machine artifacts, expire after 24h, and are capped at 50.
 - Shutdown: cancel all pending TCS, stop transport, dispose ExternalEvent
 
 ### Commands
@@ -95,11 +95,11 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 - Unit conversion: Revit internal (feet) → mm using SpecTypeId/ForgeTypeId
 
 ### MCP Tools
-- 200+ Revit tools (v0.5+), ALL MCP-facing names prefixed `revit_` (e.g. `revit_create_grid`). Server↔plugin wire command names stay unprefixed and unchanged.
+- 227 Revit tools with `--toolsets all` (230 with adaptive bake). Default surface is **40** tools (`query,create,view,meta`). ALL MCP-facing names prefixed `revit_` (e.g. `revit_create_grid`). Server↔plugin wire command names stay unprefixed and unchanged.
 - Tools live in `[McpServerToolType, Toolset("<name>")]` classes grouped by domain (query, create, modify, delete, view, export, annotation, mep, schedule, sheets, materials, geometry, rooms, links, structural, lint, toolbaker, meta). Each tool = `[McpServerTool]` static method with param docs + examples.
-- Progressive disclosure (A3): `--toolsets query,create,view` and `--read-only` gate which tools register, so weak models never see disabled tools. `structural` is **default-on and write-capable** (listed in both `DefaultOn` and `WriteCapable` in `src/server/ToolsetFilter.cs`); `--read-only` strips it along with every other write-capable toolset.
+- Progressive disclosure (A3): default toolsets are `query,create,view,meta`. `--toolsets all` (or an explicit CSV) and `--read-only` gate the rest. `structural` is write-capable and **off** unless requested. `--read-only` strips every write-capable toolset.
 - Tool Search (v0.5): server `instructions` field populated at startup (keyword-dense) so MCP clients can discover the surface — it was previously empty, so search returned nothing.
-- `revit_batch_execute` (A6): TransactionGroup-wrapped multi-command call. `SendToRevit()` helper: transport send + TCS await + 30s timeout.
+- `revit_batch_execute` (A6): TransactionGroup-wrapped multi-command call, max 20 sub-commands. `SendToRevit()` helper: transport send + TCS await + 60s timeout (TCS completed on timeout so the UI thread skips the stale request).
 
 ## Revit 2022 Specifics
 

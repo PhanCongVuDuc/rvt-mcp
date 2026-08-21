@@ -134,14 +134,11 @@ Khi không có typed tool phù hợp:
 revit_send_code_to_revit   # body C#, compile + chạy trong plugin
 ```
 
-Tool này bật mặc định (toolset `toolbaker`). Tắt bằng `--read-only` hoặc `--disable-toolbaker` nếu không muốn agent compile code trong model.
+Tool này bật mặc định (toolset `meta`). Tắt bằng `--read-only` hoặc `--disable-toolbaker` nếu không muốn agent compile code trong model.
 
 ### ToolBaker (tùy chọn)
 
-Mặc định đã có:
-
-- `revit_send_code_to_revit`
-- `revit_list_baked_tools` / `revit_run_baked_tool` cho tool đã accept trước đó
+Mặc định có `revit_send_code_to_revit`. `revit_list_baked_tools` / `revit_run_baked_tool` cần `--toolsets toolbaker` (hoặc `--toolsets all`).
 
 **Adaptive bake** (gợi ý tool mới từ usage) **tắt** trừ khi bật. Khi bật, pattern lặp có thể hiện qua `revit_list_bake_suggestions`; accept/dismiss do bạn. Không tự lên ribbon nếu chưa accept.
 
@@ -181,45 +178,44 @@ Số lượng (chưa tính baked tool cá nhân):
 
 | Mode | Tools | Ghi chú |
 |------|------:|---------|
-| Default | **220** | Mọi toolset default-on; **`modify` và `delete` tắt** |
-| `--toolsets all` | **227** | Thêm `modify` + `delete` |
+| Default | **40** | `query` + `create` + `view` + `meta` |
+| `--toolsets all` | **227** | Full catalog |
 | `all` + adaptive bake | **230** | Thêm 3 tool vòng đời suggestion |
 
 Tên MCP: `revit_*`. Tên wire server↔plugin: snake_case không prefix.
 
-**Toolset bật mặc định:**  
-`query`, `create`, `view`, `schedule`, `families`, `mep`, `graphics`, `export`, `toolbaker`, `meta`, `lint`, `sheets`, `materials`, `geometry`, `annotation`, `rooms`, `links`, `parameters`, `organization`, `workflows`, `structural`, `kei`
+**Toolset bật mặc định:** `query`, `create`, `view`, `meta`
 
-**Tắt trừ khi bật:** `modify`, `delete`  
+**Tắt trừ khi bật:** mọi toolset còn lại (`export`, `geometry`, `mep`, `structural`, `toolbaker`, `modify`, `delete`, …).  
 Ví dụ: `--toolsets query,view,meta` hoặc `--toolsets all`.  
-`--read-only` gỡ mọi toolset write-capable.
+`--read-only` gỡ mọi toolset write-capable (kể cả `create`).
 
 | Toolset | Phạm vi | Default |
 |---------|---------|---------|
 | `query` | View, selection, filter, stats, param, quan hệ, workset, group/assembly | on |
 | `create` | Grid, level, room, element line/point/surface, group | on |
 | `view` | Tạo view, layout sheet, capture, crop/scale | on |
-| `meta` | Batch, multi-Revit target, project info, purge (MVP), message | on |
-| `lint` | Pattern đặt tên view, firm-profile, tóm tắt warning | on |
-| `schedule` | List/tạo schedule, field, formula, data | on |
-| `families` | Load/unload, type, instance, audit, export `.rfa` (phía project) | on |
+| `meta` | Batch (tối đa 20), multi-Revit target, project info, purge (MVP), message, send_code | on |
+| `lint` | Pattern đặt tên view, firm-profile, tóm tắt warning | off |
+| `schedule` | List/tạo schedule, field, formula, data | off |
+| `families` | Load/unload, type, instance, audit, export `.rfa` (phía project) | off |
 | `modify` | Operate/color, set param, đổi type, gán workset | off |
 | `delete` | Xóa theo id | off |
-| `annotation` | Tag, text, dim, region, keynote, check | on |
-| `export` | PDF/DWG/IFC/NWC, room data, và helper export khác | on |
-| `mep` | System, connector, network, place terminal/fixture, … | on |
-| `graphics` | View filter, override, visibility/phase | on |
-| `toolbaker` | send_code, list/run baked; suggestion chỉ khi adaptive on | on |
-| `sheets` | Sheet, titleblock, revision, renumber | on |
-| `materials` | Material, appearance, gán, takeoff | on |
-| `geometry` | BBox, measure, clash, volume/area, … | on |
-| `rooms` | Room/area/space, finish, separator | on |
-| `links` | Link Revit/CAD, tọa độ | on |
-| `parameters` | Project/shared parameter | on |
-| `organization` | Saved selection, view template | on |
-| `workflows` | Flow ghép clash/audit/sheet/takeoff | on |
-| `structural` | Column, beam, foundation, rebar, load, … | on |
-| `kei` | DB project KEI, query/write SQLite (WAL-safe), import equipment | on |
+| `annotation` | Tag, text, dim, region, keynote, check | off |
+| `export` | PDF/DWG/IFC/NWC, room data, và helper export khác | off |
+| `mep` | System, connector, network, place terminal/fixture, … | off |
+| `graphics` | View filter, override, visibility/phase | off |
+| `toolbaker` | list/run baked; suggestion chỉ khi adaptive on | off |
+| `sheets` | Sheet, titleblock, revision, renumber | off |
+| `materials` | Material, appearance, gán, takeoff | off |
+| `geometry` | BBox, measure, clash, volume/area, … | off |
+| `rooms` | Room/area/space, finish, separator | off |
+| `links` | Link Revit/CAD, tọa độ | off |
+| `parameters` | Project/shared parameter | off |
+| `organization` | Saved selection, view template | off |
+| `workflows` | Flow ghép clash/audit/sheet/takeoff | off |
+| `structural` | Column, beam, foundation, rebar, load, … | off |
+| `kei` | DB project KEI, query/write SQLite (WAL-safe), import equipment | off |
 
 ### Tool đại diện
 
@@ -356,7 +352,7 @@ Dùng được, không thần thánh. CI build 6 shell + test server. Runtime s�
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Process, transport, DTO |
 | [docs/bake.md](docs/bake.md) | Adaptive bake và privacy body |
 | [docs/roadmap.md](docs/roadmap.md) | Hardening gần và non-goal |
-| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | Tool KEI SQLite (toolset `kei` default-on) |
+| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | Tool KEI SQLite (`--toolsets kei`) |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ---

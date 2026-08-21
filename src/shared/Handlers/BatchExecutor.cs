@@ -18,6 +18,11 @@ namespace RvtMcp.Plugin.Handlers
             public bool AnyFailed { get; set; }
         }
 
+        public const int MaxCommands = 20;
+
+        public static string TooManyCommandsMessage(int count) =>
+            $"batch_execute supports at most {MaxCommands} commands (got {count}). Split the batch.";
+
         /// <param name="commandsArr">The <c>commands</c> JArray from the request params.</param>
         /// <param name="continueOnError">If false, stops at first failure.</param>
         /// <param name="invoke">
@@ -39,6 +44,13 @@ namespace RvtMcp.Plugin.Handlers
             if (invoke == null) throw new ArgumentNullException(nameof(invoke));
 
             var outcome = new Outcome();
+
+            if (commandsArr.Count > MaxCommands)
+            {
+                outcome.AnyFailed = true;
+                outcome.Results.Add(new { index = -1, ok = false, error = TooManyCommandsMessage(commandsArr.Count) });
+                return outcome;
+            }
 
             for (var i = 0; i < commandsArr.Count; i++)
             {

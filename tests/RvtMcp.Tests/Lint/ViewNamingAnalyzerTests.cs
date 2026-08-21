@@ -86,6 +86,18 @@ namespace RvtMcp.Tests.Lint
         }
 
         [Fact]
+        public void Analyze_custom_outlier_limit_supports_handler_paging()
+        {
+            var names = new List<string>();
+            for (int i = 1; i <= 40; i++) names.Add($"L{i:00}-View");
+            for (int i = 1; i <= 21; i++) names.Add($"Level {i}");
+
+            var result = ViewNamingAnalyzer.Analyze(names, outlierLimit: 21);
+
+            Assert.Equal(21, result.Outliers.Count);
+        }
+
+        [Fact]
         public void Analyze_outliers_capped_at_20()
         {
             // 21 "almost-matching" outliers vs 40 matching → outliers list stops at 20

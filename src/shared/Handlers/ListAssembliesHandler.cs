@@ -10,8 +10,8 @@ namespace RvtMcp.Plugin.Handlers
     public class ListAssembliesHandler : IRevitCommand
     {
         public string Name => "list_assemblies";
-        public string Description => "List Revit assembly instances in the active document.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""includeMembers"":{""type"":""boolean"",""default"":false,""description"":""Include member element IDs for each assembly.""}}}";
+        public string Description => "List a bounded page of Revit assembly instances in the active document.";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""includeMembers"":{""type"":""boolean"",""default"":false,""description"":""Include a bounded member ID preview for each assembly.""},""start_index"":{""type"":""integer"",""default"":0,""minimum"":0},""max_results"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":500},""max_members_per_assembly"":{""type"":""integer"",""default"":50,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -32,27 +32,36 @@ namespace RvtMcp.Plugin.Handlers
             }
 
             var includeMembers = request.Value<bool?>("includeMembers") ?? false;
-            var assemblies = new List<ListAssemblyInfo>();
+            if (!ResponsePaging.TryParse(request, "start_index", "max_results", 100, 500, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
+            var maxMembers = request.Value<int?>("max_members_per_assembly") ?? 50;
+            if (maxMembers < 1 || maxMembers > 500)
+                return CommandResult.Fail("max_members_per_assembly must be between 1 and the hard maximum of 500.");
 
+            var assemblies = new List<ListAssemblyInfo>();
             foreach (AssemblyInstance assembly in new FilteredElementCollector(doc).OfClass(typeof(AssemblyInstance)))
-            {
-                assemblies.Add(BuildAssemblyInfo(doc, assembly, includeMembers));
-            }
+                assemblies.Add(BuildAssemblyInfo(doc, assembly, includeMembers, maxMembers));
 
             var orderedAssemblies = assemblies
                 .OrderBy(a => a.Name)
                 .ThenBy(a => a.AssemblyId)
                 .ToArray();
+            var page = ResponsePaging.Slice(orderedAssemblies, paging.StartIndex, paging.MaxResults);
 
             return CommandResult.Ok(new
             {
-                count = orderedAssemblies.Length,
+                count = page.TotalCount,
+                start_index = page.StartIndex,
+                returned_count = page.ReturnedCount,
+                truncated = page.Truncated,
+                next_index = page.NextIndex,
                 includeMembers,
-                assemblies = orderedAssemblies
+                max_members_per_assembly = maxMembers,
+                assemblies = page.Items
             });
         }
 
-        private static ListAssemblyInfo BuildAssemblyInfo(Document doc, AssemblyInstance assembly, bool includeMembers)
+        private static ListAssemblyInfo BuildAssemblyInfo(Document doc, AssemblyInstance assembly, bool includeMembers, int maxMembers)
         {
             var typeId = ToValidId(assembly.GetTypeId());
             var typeElement = typeId.HasValue
@@ -86,7 +95,14 @@ namespace RvtMcp.Plugin.Handlers
             };
 
             if (includeMembers)
-                info.MemberIds = memberIds.Select(RevitCompat.GetId).ToArray();
+            {
+                info.MemberIds = memberIds
+                    .Select(RevitCompat.GetId)
+                    .OrderBy(id => id)
+                    .Take(maxMembers)
+                    .ToArray();
+                info.MembersTruncated = memberIds.Count > info.MemberIds.Length;
+            }
 
             return info;
         }
@@ -136,6 +152,9 @@ namespace RvtMcp.Plugin.Handlers
 
             [JsonProperty("memberIds", NullValueHandling = NullValueHandling.Ignore)]
             public long[] MemberIds { get; set; }
+
+            [JsonProperty("membersTruncated", NullValueHandling = NullValueHandling.Ignore)]
+            public bool? MembersTruncated { get; set; }
         }
     }
 }

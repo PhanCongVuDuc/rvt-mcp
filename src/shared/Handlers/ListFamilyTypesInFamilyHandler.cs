@@ -28,8 +28,11 @@ namespace RvtMcp.Plugin.Handlers
   ""properties"": {
     ""family_id"": {""type"": ""string"", ""description"": ""Family ElementId. Either family_id or family_name required.""},
     ""family_name"": {""type"": ""string"", ""description"": ""Family name. Used if family_id not provided.""},
-    ""include_parameter_values"": {""type"": ""boolean"", ""default"": true, ""description"": ""If true, include all type parameter name -> value pairs.""},
-    ""include_built_in_only"": {""type"": ""boolean"", ""default"": false, ""description"": ""If true, only built-in parameters; else include shared/project parameters too.""}
+    ""include_parameter_values"": {""type"": ""boolean"", ""default"": true, ""description"": ""If true, include bounded type parameter values.""},
+    ""include_built_in_only"": {""type"": ""boolean"", ""default"": false, ""description"": ""If true, only built-in parameters; else include shared/project parameters too.""},
+    ""start_index"": {""type"": ""integer"", ""default"": 0, ""minimum"": 0},
+    ""max_types"": {""type"": ""integer"", ""default"": 100, ""minimum"": 1, ""maximum"": 500},
+    ""parameter_names"": {""type"": ""array"", ""items"": {""type"": ""string""}, ""description"": ""Optional exact parameter-name allowlist.""}
   }
 }";
 
@@ -57,6 +60,11 @@ namespace RvtMcp.Plugin.Handlers
             var includeBuiltInOnly = request["include_built_in_only"] != null
                 ? request.Value<bool>("include_built_in_only")
                 : false;
+            if (!ResponsePaging.TryParse(request, "start_index", "max_types", 100, 500, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
+            var parameterNames = new HashSet<string>(
+                request["parameter_names"]?.Values<string>() ?? Enumerable.Empty<string>(),
+                StringComparer.OrdinalIgnoreCase);
 
             if (string.IsNullOrWhiteSpace(familyIdStr) && string.IsNullOrWhiteSpace(familyName))
                 return CommandResult.Fail("Either family_id or family_name is required.");
@@ -99,10 +107,14 @@ namespace RvtMcp.Plugin.Handlers
             var isEditable = SafeIsEditable(family);
 
             // Enumerate symbols
-            var symbolIds = GetFamilySymbolIdsCompat(family);
+            var symbolIds = GetFamilySymbolIdsCompat(family)
+                .Where(id => id != null)
+                .OrderBy(RevitCompat.GetId)
+                .ToArray();
+            var symbolPage = ResponsePaging.Slice(symbolIds, paging.StartIndex, paging.MaxResults);
             var types = new List<object>();
 
-            foreach (var sid in symbolIds)
+            foreach (var sid in symbolPage.Items)
             {
                 if (sid == null) continue;
                 var sym = doc.GetElement(sid) as FamilySymbol;
@@ -111,7 +123,7 @@ namespace RvtMcp.Plugin.Handlers
                 object parametersDto = null;
                 if (includeParameterValues)
                 {
-                    parametersDto = BuildParametersDto(doc, sym, includeBuiltInOnly);
+                    parametersDto = BuildParametersDto(doc, sym, includeBuiltInOnly, parameterNames);
                 }
 
                 types.Add(new
@@ -130,13 +142,18 @@ namespace RvtMcp.Plugin.Handlers
                 category = categoryName,
                 kind = kind,
                 is_editable = isEditable,
+                total_type_count = symbolPage.TotalCount,
+                start_index = symbolPage.StartIndex,
+                returned_count = symbolPage.ReturnedCount,
+                truncated = symbolPage.Truncated,
+                next_index = symbolPage.NextIndex,
                 types = types.ToArray()
             });
         }
 
         // --- parameter extraction ---------------------------------------------------
 
-        private static JObject BuildParametersDto(Document doc, FamilySymbol sym, bool includeBuiltInOnly)
+        private static JObject BuildParametersDto(Document doc, FamilySymbol sym, bool includeBuiltInOnly, HashSet<string> parameterNames)
         {
             var paramsObj = new JObject();
             ParameterSet paramSet;
@@ -155,6 +172,7 @@ namespace RvtMcp.Plugin.Handlers
                 try { name = p.Definition?.Name; }
                 catch { name = null; }
                 if (string.IsNullOrEmpty(name)) continue;
+                if (parameterNames != null && parameterNames.Count > 0 && !parameterNames.Contains(name)) continue;
 
                 // Avoid clobbering on duplicate names (e.g. shared params with same display name);
                 // first one wins.

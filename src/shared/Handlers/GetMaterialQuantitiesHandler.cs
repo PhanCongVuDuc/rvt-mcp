@@ -9,8 +9,8 @@ namespace RvtMcp.Plugin.Handlers
     public class GetMaterialQuantitiesHandler : IRevitCommand
     {
         public string Name => "get_material_quantities";
-        public string Description => "Calculate material quantities from elements by category";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""category"":{""type"":""string"",""description"":""Built-in category name""}},""required"":[""category""]}";
+        public string Description => "Calculate a filtered, bounded page of material quantities from elements by category";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""category"":{""type"":""string"",""description"":""Built-in category name""},""material_name_filter"":{""type"":""string""},""start_index"":{""type"":""integer"",""default"":0,""minimum"":0},""max_results"":{""type"":""integer"",""default"":200,""minimum"":1,""maximum"":1000}},""required"":[""category""]}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -20,6 +20,9 @@ namespace RvtMcp.Plugin.Handlers
 
             var request = JObject.Parse(paramsJson);
             var categoryName = request.Value<string>("category");
+            var materialNameFilter = request.Value<string>("material_name_filter");
+            if (!ResponsePaging.TryParse(request, "start_index", "max_results", 200, 1000, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
 
             if (string.IsNullOrEmpty(categoryName))
                 return CommandResult.Fail("category is required (e.g. 'Walls', 'Floors', 'Roofs').");
@@ -72,15 +75,22 @@ namespace RvtMcp.Plugin.Handlers
                     totalAreaM2 = Math.Round(g.Sum(x => x.area), 2),
                     totalVolumeM3 = Math.Round(g.Sum(x => x.volume), 4)
                 })
+                .Where(m => string.IsNullOrWhiteSpace(materialNameFilter)
+                    || m.material.IndexOf(materialNameFilter, StringComparison.OrdinalIgnoreCase) >= 0)
                 .OrderByDescending(m => m.totalVolumeM3)
                 .ToArray();
+            var page = ResponsePaging.Slice(materialData, paging.StartIndex, paging.MaxResults);
 
             return CommandResult.Ok(new
             {
                 category = categoryName,
                 elementCount = elements.Count,
-                materialCount = materialData.Length,
-                materials = materialData
+                materialCount = page.TotalCount,
+                start_index = page.StartIndex,
+                returned_count = page.ReturnedCount,
+                truncated = page.Truncated,
+                next_index = page.NextIndex,
+                materials = page.Items
             });
         }
     }

@@ -25,7 +25,8 @@ namespace RvtMcp.Plugin.Handlers
     ""import_path"": { ""type"": ""string"" },
     ""mode"": { ""type"": ""string"", ""enum"": [""export_only"", ""import_only"", ""export_then_import""], ""default"": ""export_only"" },
     ""dry_run"": { ""type"": ""boolean"", ""default"": true },
-    ""key_field"": { ""type"": ""string"", ""default"": ""element_id"" }
+    ""key_field"": { ""type"": ""string"", ""default"": ""element_id"" },
+    ""output"": { ""type"": ""string"", ""enum"": [""inline"", ""file""], ""default"": ""inline"" }
   }
 }";
 

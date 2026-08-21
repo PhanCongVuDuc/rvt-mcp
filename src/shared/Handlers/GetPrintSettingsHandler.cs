@@ -17,7 +17,7 @@ namespace RvtMcp.Plugin.Handlers
             "print range) plus all named print settings (PrintSetting, with paper size and page " +
             "orientation) and view/sheet sets (ViewSheetSet). Read-only.";
 
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""kind_filter"":{""type"":""string"",""enum"":[""all"",""print"",""view_sheet_set""],""default"":""all""},""start_index"":{""type"":""integer"",""default"":0,""minimum"":0},""max_results"":{""type"":""integer"",""default"":50,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -25,16 +25,21 @@ namespace RvtMcp.Plugin.Handlers
             if (doc == null)
                 return CommandResult.Fail("No document is open.");
 
-            // Parameters accepted for consistency; none are required.
+            JObject request;
             try
             {
-                if (!string.IsNullOrWhiteSpace(paramsJson))
-                    JObject.Parse(paramsJson);
+                request = string.IsNullOrWhiteSpace(paramsJson) ? new JObject() : JObject.Parse(paramsJson);
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                // No parameters are used; ignore malformed JSON rather than failing.
+                return CommandResult.Fail("Invalid JSON parameters: " + ex.Message);
             }
+            var kindFilter = request.Value<string>("kind_filter") ?? "all";
+            var allowedKinds = new[] { "all", "print", "view_sheet_set" };
+            if (!allowedKinds.Contains(kindFilter, StringComparer.OrdinalIgnoreCase))
+                return CommandResult.Fail("kind_filter must be one of: all, print, view_sheet_set.");
+            if (!ResponsePaging.TryParse(request, "start_index", "max_results", 50, 500, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
 
             // ----- PrintManager state -----
             // PrintManager properties can throw when no printer is configured;
@@ -175,14 +180,26 @@ namespace RvtMcp.Plugin.Handlers
                 // ViewSheetSet unavailable; leave list empty.
             }
 
+            var includePrint = kindFilter.Equals("all", StringComparison.OrdinalIgnoreCase) || kindFilter.Equals("print", StringComparison.OrdinalIgnoreCase);
+            var includeSets = kindFilter.Equals("all", StringComparison.OrdinalIgnoreCase) || kindFilter.Equals("view_sheet_set", StringComparison.OrdinalIgnoreCase);
+            var printPage = ResponsePaging.Slice(includePrint ? namedPrintSettings : new List<object>(), paging.StartIndex, paging.MaxResults);
+            var setPage = ResponsePaging.Slice(includeSets ? viewSheetSets : new List<object>(), paging.StartIndex, paging.MaxResults);
+            var nextIndices = new[] { printPage.NextIndex, setPage.NextIndex }.Where(i => i.HasValue).Select(i => i.Value).ToArray();
+
             return CommandResult.Ok(new
             {
                 doc_title = doc.Title,
                 print_to_file = printToFile,
                 selected_printer = selectedPrinter,
                 print_range = printRange,
-                named_print_settings = namedPrintSettings.ToArray(),
-                view_sheet_sets = viewSheetSets.ToArray()
+                kind_filter = kindFilter,
+                start_index = paging.StartIndex,
+                max_results = paging.MaxResults,
+                counts = new { print = printPage.TotalCount, view_sheet_set = setPage.TotalCount },
+                truncated = printPage.Truncated || setPage.Truncated,
+                next_index = nextIndices.Length > 0 ? (int?)nextIndices.Max() : null,
+                named_print_settings = printPage.Items,
+                view_sheet_sets = setPage.Items
             });
         }
     }

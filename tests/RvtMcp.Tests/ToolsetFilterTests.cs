@@ -15,7 +15,7 @@ namespace RvtMcp.Tests
         {
             var set = ToolsetFilter.Resolve(null);
             Assert.Equal(
-                new[] { "annotation", "create", "export", "families", "geometry", "graphics", "kei", "links", "lint", "materials", "mep", "meta", "organization", "parameters", "query", "rooms", "schedule", "sheets", "structural", "toolbaker", "view", "workflows" },
+                new[] { "create", "meta", "query", "view" },
                 set.OrderBy(s => s).ToArray());
         }
 
@@ -24,7 +24,7 @@ namespace RvtMcp.Tests
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig { Toolsets = new List<string>() });
             Assert.Equal(
-                new[] { "annotation", "create", "export", "families", "geometry", "graphics", "kei", "links", "lint", "materials", "mep", "meta", "organization", "parameters", "query", "rooms", "schedule", "sheets", "structural", "toolbaker", "view", "workflows" },
+                new[] { "create", "meta", "query", "view" },
                 set.OrderBy(s => s).ToArray());
         }
 
@@ -45,7 +45,7 @@ namespace RvtMcp.Tests
             });
 
             Assert.Equal(ToolsetFilter.DefaultOn.OrderBy(s => s), set.OrderBy(s => s));
-            Assert.Contains("toolbaker", set);
+            Assert.DoesNotContain("toolbaker", set);
         }
 
         // --- Explicit toolsets --------------------------------------------
@@ -139,9 +139,9 @@ namespace RvtMcp.Tests
         public void Resolve_ReadOnlyWithDefaults_LeavesOnlyReadSafeDefaults()
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig { ReadOnly = true });
-            // Default = query+create+view+schedule+toolbaker+meta+lint+sheets+materials+geometry. ReadOnly strips write-capable sets.
+            // Default = query+create+view+meta. ReadOnly strips write-capable create.
             Assert.Equal(
-                new[] { "geometry", "lint", "meta", "query", "view" },
+                new[] { "meta", "query", "view" },
                 set.OrderBy(s => s).ToArray());
         }
 
@@ -170,14 +170,14 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
-        public void Resolve_EnableToolbaker_KeepsToolbakerInDefaults()
+        public void Resolve_EnableToolbaker_DoesNotInjectToolbakerIntoNarrowDefaults()
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig
             {
                 EnableToolbaker = true,
             });
 
-            Assert.Contains("toolbaker", set);
+            Assert.DoesNotContain("toolbaker", set);
         }
 
         [Fact]

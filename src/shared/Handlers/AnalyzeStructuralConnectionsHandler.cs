@@ -11,7 +11,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "analyze_structural_connections";
         public string Description => "Audit structural joins between columns/beams. Reports per-element: joined neighbor count + neighbor ids. Optional element_ids filter; default = all structural framing + columns in model.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""element_ids"":{""type"":""array"",""items"":{""type"":""integer""}},""limit"":{""type"":""integer"",""default"":500}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""element_ids"":{""type"":""array"",""items"":{""type"":""integer""}},""limit"":{""type"":""integer"",""default"":500,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -20,6 +20,8 @@ namespace RvtMcp.Plugin.Handlers
 
             var req = JObject.Parse(paramsJson ?? "{}");
             var limit = req.Value<int?>("limit") ?? 500;
+            if (limit < 1 || limit > 500)
+                return CommandResult.Fail("limit must be between 1 and the hard maximum of 500.");
             var idsToken = req["element_ids"] as JArray;
 
             IEnumerable<Element> elements;

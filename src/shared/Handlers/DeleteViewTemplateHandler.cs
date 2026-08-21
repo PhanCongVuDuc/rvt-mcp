@@ -23,7 +23,8 @@ namespace RvtMcp.Plugin.Handlers
       ""type"": ""boolean"",
       ""default"": false,
       ""description"": ""If true, clears ViewTemplateId from dependent views before deleting.""
-    }
+    },
+    ""max_used_by_views"": { ""type"": ""integer"", ""default"": 100, ""minimum"": 1, ""maximum"": 1000 }
   }
 }";
 
@@ -37,6 +38,9 @@ namespace RvtMcp.Plugin.Handlers
             var templateIdVal = request.Value<long>("templateId");
             var dryRun = request.Value<bool?>("dryRun") ?? true;
             var clearFromViews = request.Value<bool?>("clearFromViews") ?? false;
+            var maxUsedByViews = request.Value<int?>("max_used_by_views") ?? 100;
+            if (maxUsedByViews < 1 || maxUsedByViews > 1000)
+                return CommandResult.Fail("max_used_by_views must be between 1 and the hard maximum of 1000.");
 
             if (!RevitCompat.CanRepresentElementId(templateIdVal))
                 return CommandResult.Fail(RevitCompat.ElementIdRangeError(templateIdVal));
@@ -123,10 +127,14 @@ namespace RvtMcp.Plugin.Handlers
                 deleted,
                 templateId = templateIdVal,
                 templateName = template.Name,
+                success = true,
                 usedByViewCount = usedByViewsDto.Length,
-                usedByViews = usedByViewsDto,
+                usedByViews = usedByViewsDto.Take(maxUsedByViews).ToArray(),
+                usedByViewsTruncated = usedByViewsDto.Length > maxUsedByViews,
                 clearFromViews,
-                deletedElementIds = deletedIds.ToArray()
+                deletedElementCount = deletedIds.Count,
+                deletedElementIds = deletedIds.Take(maxUsedByViews).ToArray(),
+                deletedElementIdsTruncated = deletedIds.Count > maxUsedByViews
             });
         }
     }

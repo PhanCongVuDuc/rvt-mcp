@@ -19,7 +19,8 @@ namespace RvtMcp.Plugin.Handlers
                 ""room_ids"": { ""type"": ""array"", ""items"": { ""type"": ""integer"" } },
                 ""level_name"": { ""type"": ""string"" },
                 ""include_empty"": { ""type"": ""boolean"" },
-                ""limit"": { ""type"": ""integer"", ""minimum"": 1, ""maximum"": 20000 }
+                ""limit"": { ""type"": ""integer"", ""minimum"": 1, ""maximum"": 20000 },
+                ""output"": { ""type"": ""string"", ""enum"": [""inline"", ""file""], ""default"": ""inline"" }
             }
         }";
 

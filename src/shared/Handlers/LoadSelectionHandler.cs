@@ -18,7 +18,9 @@ namespace RvtMcp.Plugin.Handlers
   ""properties"": {
     ""name"": { ""type"": ""string"" },
     ""selectionId"": { ""type"": ""integer"" },
-    ""includeElementSummary"": { ""type"": ""boolean"", ""default"": false }
+    ""includeElementSummary"": { ""type"": ""boolean"", ""default"": false },
+    ""start_index"": { ""type"": ""integer"", ""default"": 0, ""minimum"": 0 },
+    ""max_results"": { ""type"": ""integer"", ""default"": 200, ""minimum"": 1, ""maximum"": 1000 }
   }
 }";
 
@@ -32,6 +34,8 @@ namespace RvtMcp.Plugin.Handlers
             var name = request.Value<string>("name");
             var selectionIdInput = request.Value<long?>("selectionId");
             var includeElementSummary = request.Value<bool?>("includeElementSummary") ?? false;
+            if (!ResponsePaging.TryParse(request, "start_index", "max_results", 200, 1000, out var paging, out var pagingError))
+                return CommandResult.Fail(pagingError);
 
             if (string.IsNullOrEmpty(name) && !selectionIdInput.HasValue)
                 return CommandResult.Fail("Either name or selectionId is required.");
@@ -67,11 +71,14 @@ namespace RvtMcp.Plugin.Handlers
                 targetFilter = matches[0];
             }
 
-            var elementIds = targetFilter.GetElementIds();
+            var elementIds = targetFilter.GetElementIds()
+                .OrderBy(RevitCompat.GetId)
+                .ToArray();
+            var page = ResponsePaging.Slice(elementIds, paging.StartIndex, paging.MaxResults);
             var staleIds = new List<long>();
             var elements = new List<object>();
 
-            foreach (var id in elementIds)
+            foreach (var id in page.Items)
             {
                 var el = doc.GetElement(id);
                 if (el == null)
@@ -96,8 +103,12 @@ namespace RvtMcp.Plugin.Handlers
             {
                 selectionId = RevitCompat.GetId(targetFilter.Id),
                 name = targetFilter.Name,
-                count = elementIds.Count,
-                elementIds = elementIds.Select(id => RevitCompat.GetId(id)).ToArray(),
+                count = page.TotalCount,
+                start_index = page.StartIndex,
+                returned_count = page.ReturnedCount,
+                truncated = page.Truncated,
+                next_index = page.NextIndex,
+                elementIds = page.Items.Select(id => RevitCompat.GetId(id)).ToArray(),
                 staleIds = staleIds.ToArray(),
                 elements = includeElementSummary ? elements.ToArray() : null
             });

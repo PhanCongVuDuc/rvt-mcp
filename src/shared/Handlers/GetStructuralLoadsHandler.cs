@@ -11,7 +11,7 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "get_structural_loads";
         public string Description => "Return structural loads (point/line/area). Optional filters: element_id (host), load_type ('point'|'line'|'area'). Returns id, type, host_id, force XYZ, moment XYZ, case info.";
-        public string ParametersSchema => @"{""type"":""object"",""properties"":{""element_id"":{""type"":""integer""},""load_type"":{""type"":""string"",""enum"":[""point"",""line"",""area""]},""limit"":{""type"":""integer"",""default"":500}}}";
+        public string ParametersSchema => @"{""type"":""object"",""properties"":{""element_id"":{""type"":""integer""},""load_type"":{""type"":""string"",""enum"":[""point"",""line"",""area""]},""limit"":{""type"":""integer"",""default"":500,""minimum"":1,""maximum"":500}}}";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {
@@ -22,6 +22,8 @@ namespace RvtMcp.Plugin.Handlers
             var elementId = req.Value<long?>("element_id");
             var loadType = (req.Value<string>("load_type") ?? "").ToLowerInvariant();
             var limit = req.Value<int?>("limit") ?? 500;
+            if (limit < 1 || limit > 500)
+                return CommandResult.Fail("limit must be between 1 and the hard maximum of 500.");
 
             var categories = new List<BuiltInCategory>();
             if (loadType == "point") categories.Add(BuiltInCategory.OST_PointLoads);

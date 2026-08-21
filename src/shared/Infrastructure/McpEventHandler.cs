@@ -96,7 +96,7 @@ namespace RvtMcp.Plugin
                         {
                             App.DebugLog("McpToastNotifier.OnCompleted failed (unknown command): " + toastEx.Message);
                         }
-                        continue;
+                        break;
                     }
 
                     // S6 strict schema validation — fail fast with error-as-teacher envelope
@@ -141,11 +141,29 @@ namespace RvtMcp.Plugin
                         {
                             App.DebugLog("McpToastNotifier.OnCompleted failed (validation): " + toastEx.Message);
                         }
-                        continue;
+                        break;
                     }
 
                     var result = command.Execute(app, request.ParamsJson);
                     sw.Stop();
+
+                    // Explicit output=file and oversized arbitrary-code responses spill before
+                    // logging and guarding, so neither the wire nor logs retain the bulk body.
+                    var preSpillResponse = JsonConvert.SerializeObject(new
+                    {
+                        id = request.Id,
+                        success = result.Success,
+                        data = result.Data,
+                        error = result.Error
+                    });
+                    var spillOutcome = new ResponseSpillProcessor(new ResponseSpillWriter()).Process(
+                        request.CommandName,
+                        request.ParamsJson,
+                        result.Success,
+                        result.Data,
+                        preSpillResponse);
+                    result.Data = spillOutcome.Data;
+
                     // responseData is the redacted view used ONLY for session log + summary.
                     // The wire response (below) uses result.Data raw so the agent sees real values.
                     var responseData = McpResponsePrivacy.RedactDataForResponse(request.CommandName, result.Data);
@@ -199,13 +217,75 @@ namespace RvtMcp.Plugin
                         error = resultError
                     });
 
-                    var sizeWarning = ResponseSizeGuard.CheckResponse(
+                    var size = ResponseSizeGuard.Evaluate(
                         commandName: request.CommandName,
                         serializedPayload: response,
-                        topLevelKeyCount: (result.Data as Newtonsoft.Json.Linq.JObject)?.Count ?? 0);
-                    if (sizeWarning != null)
+                        topLevelKeyCount: (result.Data as Newtonsoft.Json.Linq.JObject)?.Count ?? 0,
+                        narrowingHint: ResponseSizePolicyCatalog.GetNarrowingHint(request.CommandName));
+                    if (size.Warning != null)
+                        Console.Error.WriteLine(size.Warning);
+
+                    if (size.Reject)
                     {
-                        Console.Error.WriteLine(sizeWarning);
+                        var mutationCompleted = result.Success
+                            && ResponseSizePolicyCatalog.ShouldPreserveSuccessfulMutation(
+                                request.CommandName,
+                                request.ParamsJson,
+                                ToolActivityClassifier.Classify(request.CommandName) == ToolActivityKind.Write);
+                        if (mutationCompleted)
+                        {
+                            var compacted = MutationResponseCompactor.Compact(result.Data, size.ByteCount);
+                            if (ResponseSizePolicyCatalog.IsMutationOutcomeIndeterminate(request.CommandName))
+                                compacted["mutation_applied"] = JValue.CreateNull();
+                            response = JsonConvert.SerializeObject(new
+                            {
+                                id = request.Id,
+                                success = true,
+                                data = compacted,
+                                error = (string)null,
+                                warning = compacted.Value<string>("warning")
+                            });
+
+                            // Defensive fallback: compaction itself must never breach the hard cap.
+                            var compactSize = ResponseSizeGuard.Evaluate(
+                                request.CommandName,
+                                response,
+                                compacted.Count);
+                            if (compactSize.Reject)
+                            {
+                                response = JsonConvert.SerializeObject(new
+                                {
+                                    id = request.Id,
+                                    success = true,
+                                    data = new
+                                    {
+                                        success = true,
+                                        mutation_applied = compacted["mutation_applied"],
+                                        response_compacted = true,
+                                        original_byte_count = size.ByteCount
+                                    },
+                                    error = (string)null,
+                                    warning = "Command completed successfully; oversized response detail was omitted. Inspect the summary before another call."
+                                });
+                            }
+                        }
+                        else
+                        {
+                            response = JsonConvert.SerializeObject(new
+                            {
+                                id = request.Id,
+                                success = false,
+                                error = size.RejectError
+                            });
+                        }
+                    }
+                    else if (size.AgentWarning != null)
+                    {
+                        var warnedResponse = JObject.Parse(response);
+                        warnedResponse["warning"] = size.AgentWarning;
+                        var candidate = warnedResponse.ToString(Formatting.None);
+                        if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= ResponseSizeGuard.EnforcementBudgetBytes)
+                            response = candidate;
                     }
 
                     request.Tcs.TrySetResult(response);
@@ -274,6 +354,14 @@ namespace RvtMcp.Plugin
                         App.DebugLog("McpToastNotifier.OnCompleted failed (exception path): " + toastEx.Message);
                     }
                 }
+
+                break;
+            }
+
+            if (!_queue.IsEmpty)
+            {
+                try { App.Instance?.ExternalEvent?.Raise(); }
+                catch { }
             }
         }
 

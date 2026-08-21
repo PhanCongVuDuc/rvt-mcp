@@ -207,21 +207,7 @@ namespace RvtMcp.Plugin
                     LastCommandTime = DateTime.Now;
                     _onRequest(line, tcs);
 
-                    // Wait for result with 60s timeout
-                    string response;
-                    if (tcs.Task.Wait(TimeSpan.FromSeconds(60)))
-                    {
-                        response = tcs.Task.Result;
-                    }
-                    else
-                    {
-                        response = Newtonsoft.Json.JsonConvert.SerializeObject(new
-                        {
-                            id,
-                            success = false,
-                            error = "Request timed out (60s). Revit may be in a modal dialog or busy."
-                        });
-                    }
+                    var response = RequestWait.WaitOrTimeout(tcs, id);
 
                     try
                     {

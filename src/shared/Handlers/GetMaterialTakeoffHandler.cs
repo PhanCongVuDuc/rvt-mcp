@@ -19,7 +19,8 @@ namespace RvtMcp.Plugin.Handlers
     ""category_filter"": { ""type"": ""string"" },
     ""material_name_pattern"": { ""type"": ""string"" },
     ""include_elements"": { ""type"": ""boolean"", ""default"": false },
-    ""element_limit"": { ""type"": ""integer"", ""default"": 100, ""minimum"": 0, ""maximum"": 10000 }
+    ""element_limit"": { ""type"": ""integer"", ""default"": 100, ""minimum"": 0, ""maximum"": 10000 },
+    ""output"": { ""type"": ""string"", ""enum"": [""inline"", ""file""], ""default"": ""inline"" }
   }
 }";
 

@@ -134,14 +134,11 @@ When no typed tool fits:
 revit_send_code_to_revit   # C# body, compiled and run inside the plugin
 ```
 
-That tool is on by default (toolset `toolbaker`). Strip it with `--read-only` or `--disable-toolbaker` if you do not want agents compiling code in the model.
+That tool is on by default (toolset `meta`). Strip it with `--read-only` or `--disable-toolbaker` if you do not want agents compiling code in the model.
 
 ### ToolBaker (optional)
 
-By default you already have:
-
-- `revit_send_code_to_revit`
-- `revit_list_baked_tools` / `revit_run_baked_tool` for tools you previously accepted
+Default surface includes `revit_send_code_to_revit`. `revit_list_baked_tools` / `revit_run_baked_tool` need `--toolsets toolbaker` (or `--toolsets all`).
 
 **Adaptive bake** (suggest new tools from usage) is **off** unless you enable it. When on, repeated patterns can show up under `revit_list_bake_suggestions`; you accept or dismiss explicitly. Nothing ships itself into your ribbon without that step.
 
@@ -181,45 +178,44 @@ Counts (without counting personal baked tools):
 
 | Mode | Tools | Notes |
 |------|------:|-------|
-| Default | **220** | All default-on toolsets; **`modify` and `delete` off** |
-| `--toolsets all` | **227** | Adds `modify` + `delete` |
+| Default | **40** | `query` + `create` + `view` + `meta` |
+| `--toolsets all` | **227** | Full catalog |
 | `all` + adaptive bake | **230** | Adds 3 suggestion-lifecycle tools |
 
 Tool names are MCP-facing as `revit_*`. Wire names between server and plugin stay unprefixed snake_case.
 
-**Default-on toolsets:**  
-`query`, `create`, `view`, `schedule`, `families`, `mep`, `graphics`, `export`, `toolbaker`, `meta`, `lint`, `sheets`, `materials`, `geometry`, `annotation`, `rooms`, `links`, `parameters`, `organization`, `workflows`, `structural`, `kei`
+**Default-on toolsets:** `query`, `create`, `view`, `meta`
 
-**Off unless you ask:** `modify`, `delete`  
+**Off unless you ask:** everything else (`export`, `geometry`, `mep`, `structural`, `toolbaker`, `modify`, `delete`, …).  
 Example: `--toolsets query,view,meta` or `--toolsets all`.  
-`--read-only` drops every write-capable toolset.
+`--read-only` drops every write-capable toolset (including `create`).
 
 | Toolset | What it covers | Default |
 |---------|----------------|---------|
 | `query` | View, selection, filters, stats, parameters, relationships, worksets, groups/assemblies | on |
 | `create` | Grids, levels, rooms, line/point/surface-based elements, groups | on |
 | `view` | Create views, sheets layout helpers, capture image, crop/scale | on |
-| `meta` | Batch execute, multi-Revit targets, project info, purge unused (MVP), message | on |
-| `lint` | View naming patterns, firm-profile detect, warnings summary | on |
-| `schedule` | List/create schedules, fields, formulas, data | on |
-| `families` | Load/unload, types, instances, audit, export `.rfa` (project-side) | on |
+| `meta` | Batch execute (max 20), multi-Revit targets, project info, purge unused (MVP), message, send_code | on |
+| `lint` | View naming patterns, firm-profile detect, warnings summary | off |
+| `schedule` | List/create schedules, fields, formulas, data | off |
+| `families` | Load/unload, types, instances, audit, export `.rfa` (project-side) | off |
 | `modify` | Operate/color elements, set parameters, change type, workset assign | off |
 | `delete` | Delete by id | off |
-| `annotation` | Tags, text, dimensions, regions, keynotes, checks | on |
-| `export` | PDF/DWG/IFC/NWC helpers, room data, and related export tools | on |
-| `mep` | Systems, connectors, networks, place terminals/fixtures, etc. | on |
-| `graphics` | View filters, overrides, visibility/phase | on |
-| `toolbaker` | send_code, list/run baked tools; suggestion tools only if adaptive on | on |
-| `sheets` | Sheets, titleblocks, revisions, renumber | on |
-| `materials` | Materials, appearance, assignment, takeoff | on |
-| `geometry` | BBox, measure, clash, volume/area, … | on |
-| `rooms` | Rooms/areas/spaces, finishes, separators | on |
-| `links` | Revit/CAD links, coordinates | on |
-| `parameters` | Project/shared parameters | on |
-| `organization` | Saved selections, view templates | on |
-| `workflows` | Composite clash/audit/sheet/takeoff-style flows | on |
-| `structural` | Columns, beams, foundations, rebar, loads, … | on |
-| `kei` | Active KEI project DB path, query/write SQLite (WAL-safe), equipment import | on |
+| `annotation` | Tags, text, dimensions, regions, keynotes, checks | off |
+| `export` | PDF/DWG/IFC/NWC helpers, room data, and related export tools | off |
+| `mep` | Systems, connectors, networks, place terminals/fixtures, etc. | off |
+| `graphics` | View filters, overrides, visibility/phase | off |
+| `toolbaker` | list/run baked tools; suggestion tools only if adaptive on | off |
+| `sheets` | Sheets, titleblocks, revisions, renumber | off |
+| `materials` | Materials, appearance, assignment, takeoff | off |
+| `geometry` | BBox, measure, clash, volume/area, … | off |
+| `rooms` | Rooms/areas/spaces, finishes, separators | off |
+| `links` | Revit/CAD links, coordinates | off |
+| `parameters` | Project/shared parameters | off |
+| `organization` | Saved selections, view templates | off |
+| `workflows` | Composite clash/audit/sheet/takeoff-style flows | off |
+| `structural` | Columns, beams, foundations, rebar, loads, … | off |
+| `kei` | Active KEI project DB path, query/write SQLite (WAL-safe), equipment import | off |
 
 ### Representative tools
 
@@ -356,7 +352,7 @@ Usable, not sacred. CI builds the six plugin shells and server tests. Runtime co
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Processes, transport, DTO rules |
 | [docs/bake.md](docs/bake.md) | Adaptive bake and body privacy |
 | [docs/roadmap.md](docs/roadmap.md) | Near-term hardening and non-goals |
-| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | KEI SQLite tools (default-on `kei` toolset) |
+| [docs/kei-equipment-import.md](docs/kei-equipment-import.md) | KEI SQLite tools (`--toolsets kei`) |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ---

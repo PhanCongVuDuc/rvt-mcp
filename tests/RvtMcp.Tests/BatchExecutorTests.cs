@@ -99,6 +99,28 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
+        public void Run_MoreThanMaxCommands_FailsBeforeInvoke()
+        {
+            var invoked = 0;
+            var cmds = new JArray();
+            for (var i = 0; i < 21; i++)
+                cmds.Add(new JObject { ["command"] = "create_grid", ["params"] = new JObject() });
+
+            var outcome = BatchExecutor.Run(cmds, continueOnError: false, (_, __) =>
+            {
+                invoked++;
+                return BatchExecutor.InvokeResult.Ok(new { elementId = 1 });
+            });
+
+            Assert.Equal(0, invoked);
+            Assert.True(outcome.AnyFailed);
+            Assert.Single(outcome.Results);
+            var row = JObject.FromObject(outcome.Results[0]);
+            Assert.False(row.Value<bool>("ok"));
+            Assert.Contains("20", row.Value<string>("error"));
+        }
+
+        [Fact]
         public void Run_SuccessPayloadWithFailedCount_StopsAndFlags_ForRollback()
         {
             var dispatch = Dispatch(new Dictionary<string, Func<string, BatchExecutor.InvokeResult>>

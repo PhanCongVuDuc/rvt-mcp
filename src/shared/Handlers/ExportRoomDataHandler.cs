@@ -9,7 +9,12 @@ namespace RvtMcp.Plugin.Handlers
     {
         public string Name => "export_room_data";
         public string Description => "Export all room data from the project";
-        public string ParametersSchema => "{}";
+        public string ParametersSchema => @"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""output"": { ""type"": ""string"", ""enum"": [""inline"", ""file""], ""default"": ""inline"" }
+            }
+        }";
 
         public CommandResult Execute(UIApplication app, string paramsJson)
         {

@@ -18,7 +18,8 @@ namespace RvtMcp.Plugin.Handlers
                 ""area_plan_view_id"": { ""type"": ""integer"" },
                 ""area_plan_view_name"": { ""type"": ""string"" },
                 ""skip_existing"": { ""type"": ""boolean"" },
-                ""tag_type_id"": { ""type"": ""integer"" }
+                ""tag_type_id"": { ""type"": ""integer"" },
+                ""limit"": { ""type"": ""integer"", ""default"": 500, ""minimum"": 1, ""maximum"": 5000 }
             }
         }";
 
@@ -32,6 +33,7 @@ namespace RvtMcp.Plugin.Handlers
             string areaPlanViewName = "";
             bool skipExisting = true;
             long? tagTypeId = null;
+            int limit = 500;
 
             try
             {
@@ -46,12 +48,17 @@ namespace RvtMcp.Plugin.Handlers
                         skipExisting = skipVal.Value<bool>();
                     if (request.TryGetValue("tag_type_id", out var tagTypeVal))
                         tagTypeId = tagTypeVal.Value<long?>();
+                    if (request.TryGetValue("limit", out var limitVal))
+                        limit = limitVal.Value<int>();
                 }
             }
             catch (JsonException ex)
             {
                 return CommandResult.Fail($"Invalid JSON parameters: {ex.Message}");
             }
+
+            if (limit < 1 || limit > 5000)
+                return CommandResult.Fail("limit must be between 1 and the hard maximum of 5000.");
 
             // Resolve Area Plan
             ViewPlan areaPlan = null;
@@ -93,7 +100,7 @@ namespace RvtMcp.Plugin.Handlers
             }
 
             // Collect visible areas in this area plan view
-            var areas = new FilteredElementCollector(doc, areaPlan.Id)
+            var allAreas = new FilteredElementCollector(doc, areaPlan.Id)
                 .OfCategory(BuiltInCategory.OST_Areas)
                 .Cast<Area>()
                 .ToList();
@@ -112,6 +119,12 @@ namespace RvtMcp.Plugin.Handlers
                     taggedAreaIds.Add(t.Area.Id);
                 }
             }
+
+            var candidateAreas = allAreas
+                .Where(a => !skipExisting || !taggedAreaIds.Contains(a.Id))
+                .OrderBy(a => RevitCompat.GetId(a.Id))
+                .ToList();
+            var areas = candidateAreas.Take(limit).ToList();
 
             int processedCount = 0;
             int createdCount = 0;
@@ -134,13 +147,6 @@ namespace RvtMcp.Plugin.Handlers
                         if (skipExisting && taggedAreaIds.Contains(area.Id))
                         {
                             skippedCount++;
-                            itemsList.Add(new
-                            {
-                                area_id = areaId,
-                                tag_id = (long?)null,
-                                status = "skipped_existing",
-                                message = "Area already has an existing tag in this view."
-                            });
                             continue;
                         }
 
@@ -154,13 +160,16 @@ namespace RvtMcp.Plugin.Handlers
                         if (tagUv == null)
                         {
                             failedCount++;
-                            itemsList.Add(new
+                            if (itemsList.Count < 20)
                             {
-                                area_id = areaId,
-                                tag_id = (long?)null,
-                                status = "failed",
-                                message = "Area is not placed or does not have a valid location point."
-                            });
+                                itemsList.Add(new
+                                {
+                                    area_id = areaId,
+                                    tag_id = (long?)null,
+                                    status = "failed",
+                                    message = "Area is not placed or does not have a valid location point."
+                                });
+                            }
                             continue;
                         }
 
@@ -177,37 +186,35 @@ namespace RvtMcp.Plugin.Handlers
                                 createdCount++;
                                 long tagId = RevitCompat.GetId(areaTag.Id);
                                 createdTagIds.Add(tagId);
-
-                                itemsList.Add(new
-                                {
-                                    area_id = areaId,
-                                    tag_id = tagId,
-                                    status = "created",
-                                    message = "Area tag successfully created."
-                                });
                             }
                             else
                             {
                                 failedCount++;
-                                itemsList.Add(new
+                                if (itemsList.Count < 20)
                                 {
-                                    area_id = areaId,
-                                    tag_id = (long?)null,
-                                    status = "failed",
-                                    message = "doc.Create.NewAreaTag returned null."
-                                });
+                                    itemsList.Add(new
+                                    {
+                                        area_id = areaId,
+                                        tag_id = (long?)null,
+                                        status = "failed",
+                                        message = "doc.Create.NewAreaTag returned null."
+                                    });
+                                }
                             }
                         }
                         catch (Exception ex)
                         {
                             failedCount++;
-                            itemsList.Add(new
+                            if (itemsList.Count < 20)
                             {
-                                area_id = areaId,
-                                tag_id = (long?)null,
-                                status = "failed",
-                                message = $"Revit error: {ex.Message}"
-                            });
+                                itemsList.Add(new
+                                {
+                                    area_id = areaId,
+                                    tag_id = (long?)null,
+                                    status = "failed",
+                                    message = $"Revit error: {ex.Message}"
+                                });
+                            }
                         }
                     }
 
@@ -230,12 +237,18 @@ namespace RvtMcp.Plugin.Handlers
                     name = areaPlan.Name,
                     area_scheme_name = areaPlan.AreaScheme?.Name ?? ""
                 },
+                success = true,
+                candidate_count = candidateAreas.Count,
                 processed_count = processedCount,
                 created_count = createdCount,
                 skipped_existing_count = skippedCount,
                 failed_count = failedCount,
-                created_tag_ids = createdTagIds,
-                items = itemsList
+                truncated = candidateAreas.Count > processedCount,
+                remaining_candidate_count = System.Math.Max(0, candidateAreas.Count - processedCount),
+                created_tag_id_preview = createdTagIds.Take(20).ToArray(),
+                created_tag_ids_truncated = createdTagIds.Count > 20,
+                failure_preview = itemsList,
+                failures_truncated = failedCount > itemsList.Count
             });
         }
     }
