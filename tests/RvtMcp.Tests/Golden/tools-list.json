@@ -1,6 +1,6 @@
 {
   "generated_by": "ToolsListSnapshotTests",
-  "tool_count": 227,
+  "tool_count": 228,
   "tools": [
     {
       "name": "revit_acquire_coordinates_from_link",
@@ -4631,6 +4631,38 @@
       }
     },
     {
+      "name": "revit_open_model",
+      "description_hash": "sha256:c5877ef6a644e4064a5b5682508162daf14f9ce0b2645df1a96080c31a3ec895",
+      "inputSchema": {
+        "properties": {
+          "activate": {
+            "description": "",
+            "type": "Boolean"
+          },
+          "audit": {
+            "description": "",
+            "type": "Boolean"
+          },
+          "detach": {
+            "description": "",
+            "type": "Boolean"
+          },
+          "path": {
+            "description": "",
+            "type": "String"
+          },
+          "worksets": {
+            "description": "",
+            "type": "String"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "revit_operate_element",
       "description_hash": "sha256:dce2159ff80ff8d40e6fce4d17a5033a20cc1f7116c95bbace82d066996e578c",
       "inputSchema": {
@@ -5185,7 +5217,7 @@
     },
     {
       "name": "revit_send_code_to_revit",
-      "description_hash": "sha256:b432ea3aaaa106144bfca11b143de25a54613dbe0be73a7b7a77d1eee532977e",
+      "description_hash": "sha256:0256290a973b4853a2a2f4bf152da6473ab358f2dc74ac7165547e98366439d6",
       "inputSchema": {
         "properties": {
           "code": {

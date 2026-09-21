@@ -38,8 +38,8 @@ public class McpDynamicScript
 {
     public static object Run(UIApplication app)
     {
-        var doc = app.ActiveUIDocument.Document;
         var uidoc = app.ActiveUIDocument;
+        var doc = uidoc?.Document;
         " + code + @"
     }
 }";

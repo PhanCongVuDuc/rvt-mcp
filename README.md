@@ -14,7 +14,7 @@
   <a href="https://github.com/bimwright/rvt-mcp/actions/workflows/build.yml"><img src="https://github.com/bimwright/rvt-mcp/actions/workflows/build.yml/badge.svg" alt="build" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="license" /></a>
   <a href="#supported-revit-versions"><img src="https://img.shields.io/badge/Revit-2022--2027-186BFF" alt="Revit 2022-2027" /></a>
-  <a href="#tools"><img src="https://img.shields.io/badge/MCP-227%20tools-6C47FF" alt="MCP tools" /></a>
+  <a href="#tools"><img src="https://img.shields.io/badge/MCP-228%20tools-6C47FF" alt="MCP tools" /></a>
 </p>
 
 <p align="center">
@@ -178,9 +178,9 @@ Counts (without counting personal baked tools):
 
 | Mode | Tools | Notes |
 |------|------:|-------|
-| Default | **40** | `query` + `create` + `view` + `meta` |
-| `--toolsets all` | **227** | Full catalog |
-| `all` + adaptive bake | **230** | Adds 3 suggestion-lifecycle tools |
+| Default | **41** | `query` + `create` + `view` + `meta` |
+| `--toolsets all` | **228** | Full catalog |
+| `all` + adaptive bake | **231** | Adds 3 suggestion-lifecycle tools |
 
 Tool names are MCP-facing as `revit_*`. Wire names between server and plugin stay unprefixed snake_case.
 
