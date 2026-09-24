@@ -373,6 +373,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
         public static Memory.SessionContext Session { get; set; }
         public static UsageEventLogger UsageLogger { get; set; }
         public static string CurrentRevitVersion { get; private set; }
+        public static int? CurrentRevitPid { get; private set; }
 
         private static TcpClient _client;
         private static NamedPipeClientStream _pipeStream;
@@ -411,7 +412,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                 // If the discovery file exists but the connect itself fails (plugin unloaded
                 // while Revit stayed alive, or some transient state), fall through to TCP
                 // rather than giving up the whole connection attempt.
-                if (AuthToken.TryReadPipe(out var pipeName, out var pipeToken, out var pipeVer))
+                if (AuthToken.TryReadPipe(out var pipeName, out var pipeToken, out var pipeVer, out var pipePid))
                 {
                     try
                     {
@@ -420,6 +421,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                         pipe.Connect(5000);
                         _token = pipeToken;
                         CurrentRevitVersion = pipeVer;
+                        CurrentRevitPid = pipePid > 0 ? pipePid : (int?)null;
                         _pipeStream = pipe;
                         stream = pipe;
                         Console.Error.WriteLine($"[RvtMcp] Connected to Revit {pipeVer} via Named Pipe: {pipeName}");
@@ -433,10 +435,11 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                 }
 
                 // Fall back to TCP (R22-R24) if pipe did not connect.
-                if (stream == null && AuthToken.TryReadTcp(out var port, out var tcpToken, out var tcpVer))
+                if (stream == null && AuthToken.TryReadTcp(out var port, out var tcpToken, out var tcpVer, out var tcpPid))
                 {
                     _token = tcpToken;
                     CurrentRevitVersion = tcpVer;
+                    CurrentRevitPid = tcpPid > 0 ? tcpPid : (int?)null;
                     _client = new TcpClient();
                     _client.Connect("127.0.0.1", port);
                     stream = _client.GetStream();
@@ -445,7 +448,9 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 
                 if (stream == null)
                 {
-                    var which = target != null ? $"(target={target})" : "(auto-detect R22-R27)";
+                    var which = AuthToken.TargetPid.HasValue
+                        ? $"(target pid={AuthToken.TargetPid.Value})"
+                        : target != null ? $"(target={target})" : "(auto-detect R22-R27)";
                     throw new InvalidOperationException(
                         $"Revit MCP plugin not running {which}. Check discovery files in %LOCALAPPDATA%\\RvtMcp\\");
                 }
@@ -491,10 +496,11 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
         /// <summary>
         /// Close the current Server↔Plugin connection and set a new target version.
         /// Next <see cref="SendToRevit"/> call will reconnect against the new target.
-        /// Pass <c>null</c> to clear the pin and re-enable auto-detect.
+        /// Pass <c>null</c> to clear the pin and re-enable auto-detect. <paramref name="newTargetPid"/> pins one
+        /// process when several Revits of the same year are running.
         /// Cancels any in-flight requests — they'd be routed to the now-dead connection.
         /// </summary>
-        public static void Reconnect(string newTarget)
+        public static void Reconnect(string newTarget, int? newTargetPid = null)
         {
             lock (_connectLock)
             {
@@ -507,6 +513,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                 _writer = null;
                 _token = null;
                 CurrentRevitVersion = null;
+                CurrentRevitPid = null;
                 foreach (var kv in _pending)
                 {
                     kv.Value.TrySetException(new OperationCanceledException(
@@ -514,6 +521,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                 }
                 _pending.Clear();
                 AuthToken.Target = newTarget;
+                AuthToken.TargetPid = newTargetPid;
             }
         }
 
@@ -2182,8 +2190,9 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 
         [McpServerTool(Name = "revit_list_available_targets", ReadOnly = true, Idempotent = true), System.ComponentModel.Description(
             "List every Revit instance currently running with the rvt-mcp plugin loaded. " +
-            "Reads the discovery directory %LOCALAPPDATA%\\RvtMcp\\ and parses each revit-YYYY.json file. " +
+            "Reads the discovery directory %LOCALAPPDATA%\\RvtMcp\\ and parses each revit-YYYY-PID.json and revit-YYYY.json file, one entry per Revit process. " +
             "Use this BEFORE revit_switch_target so you know which years (4-digit, e.g. 2024) are actually available — do not guess. " +
+            "Several Revits of the same year are listed separately; pass the pid of the one you want to revit_switch_target. " +
             "Returns: {discovery_dir, count, targets: [{year, transport ('tcp'|'pipe'), port, pipe_name, pid, discovery_file, is_currently_connected}]}. " +
             "If count == 0, no Revit is running or no plugin is loaded — instruct the user to start Revit and enable the rvt-mcp plugin.")]
         public static string ListAvailableTargets()
@@ -2193,6 +2202,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                 var dir = AuthToken.DiscoveryDir();
                 var found = AuthToken.ListAvailable();
                 var currentYear = ToolGateway.CurrentRevitVersion;
+                var currentPid = ToolGateway.CurrentRevitPid;
                 var targets = found.Select(d => new
                 {
                     year = d.Year,
@@ -2201,7 +2211,9 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                     pipe_name = d.Transport == "pipe" ? d.PipeName : null,
                     pid = d.Pid,
                     discovery_file = d.DiscoveryFilePath,
-                    is_currently_connected = string.Equals(d.Year, currentYear, StringComparison.Ordinal)
+                    is_currently_connected = currentPid.HasValue
+                        ? d.Pid == currentPid.Value
+                        : string.Equals(d.Year, currentYear, StringComparison.Ordinal)
                 }).ToArray();
                 return JsonConvert.SerializeObject(new
                 {
@@ -2210,7 +2222,8 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                     targets,
                     note = targets.Length == 0
                         ? "No revit-YYYY.json files found. Start Revit and ensure the rvt-mcp plugin is loaded (Add-Ins ribbon)."
-                        : "Pass a 'year' value above as the 'version' argument of revit_switch_target (the parameter is named 'version', the value is the 4-digit year) to route subsequent commands to that Revit."
+                        : "Pass a 'year' value above as the 'version' argument of revit_switch_target (the parameter is named 'version', the value is the 4-digit year) to route subsequent commands to that Revit. " +
+                          "When two targets share a year, also pass its 'pid' - the year alone reaches only the one that started last."
                 }, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -2218,7 +2231,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 
         [McpServerTool(Name = "revit_get_current_target", ReadOnly = true, Idempotent = true), System.ComponentModel.Description(
             "Report which Revit instance this MCP server will route the NEXT command to. " +
-            "Returns: {pinned_target (4-digit year or 'auto'), currently_connected_year (or null), discovery_dir}. " +
+            "Returns: {pinned_target (4-digit year or 'auto'), pinned_pid (or null), currently_connected_year (or null), currently_connected_pid (or null), discovery_dir}. " +
             "Use to verify routing before sending Revit-modifying commands when multiple Revits are open.")]
         public static string GetCurrentTarget()
         {
@@ -2227,11 +2240,15 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                 return JsonConvert.SerializeObject(new
                 {
                     pinned_target = AuthToken.Target ?? "auto",
+                    pinned_pid = AuthToken.TargetPid,
                     currently_connected_year = ToolGateway.CurrentRevitVersion,
+                    currently_connected_pid = ToolGateway.CurrentRevitPid,
                     discovery_dir = AuthToken.DiscoveryDir(),
                     note = AuthToken.Target == null
                         ? "Auto-detect mode: next reconnect picks the first alive Revit (pipe 2027>2026>2025, then tcp 2024>2023>2022)."
-                        : "Pinned to Revit " + AuthToken.Target + ". Call revit_switch_target with version='auto' to clear the pin."
+                        : AuthToken.TargetPid.HasValue
+                            ? "Pinned to Revit " + AuthToken.Target + " pid " + AuthToken.TargetPid.Value + ". Call revit_switch_target with version='auto' to clear the pin."
+                            : "Pinned to Revit " + AuthToken.Target + ". Call revit_switch_target with version='auto' to clear the pin."
                 }, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -2242,18 +2259,47 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             "version: a 4-digit calendar year — '2022'|'2023'|'2024'|'2025'|'2026'|'2027' — or 'auto' to clear the pin and re-enable auto-detect. " +
             "DO NOT pass R-codes like 'R22' or 'R24' — they are rejected with an educational error. " +
             "DO NOT guess. ALWAYS call revit_list_available_targets first to see which versions are actually running and what year string each one uses. " +
+            "pid (optional): pin one Revit process from revit_list_available_targets - required to reach a specific one of several Revits of the same year; " +
+            "version must then be that target's year, or 'auto'. " +
             "Immediately closes the current Server↔Plugin connection (cancels in-flight requests) and updates the target. " +
             "The next tool call transparently reconnects against the new target. " +
-            "Returns: {ok, previousTarget, newTarget, verified (if verify=true)}. " +
+            "Returns: {ok, previousTarget, newTarget, newTargetPid, verified (if verify=true)}. " +
             "verify=true (default): immediately attempts get_current_view_info against the new target to confirm connectivity; " +
             "set verify=false to skip when the new target's document isn't in a view yet (e.g., Revit just launched).")]
-        public static async Task<string> SwitchTarget(string version, bool verify = true)
+        public static async Task<string> SwitchTarget(string version, bool verify = true, int? pid = null)
         {
             try
             {
                 var previousTarget = AuthToken.Target;
                 string newTarget = null;
-                if (!string.IsNullOrWhiteSpace(version) && !version.Equals("auto", StringComparison.OrdinalIgnoreCase))
+                if (pid.HasValue)
+                {
+                    var pinned = AuthToken.FindByPid(pid.Value);
+                    if (pinned == null)
+                    {
+                        return JsonConvert.SerializeObject(new
+                        {
+                            ok = false,
+                            error = "No running Revit with the rvt-mcp plugin has pid " + pid.Value + ". " +
+                                    "Call revit_list_available_targets to see the pids that are running.",
+                            recommended_next_tool = "revit_list_available_targets"
+                        });
+                    }
+                    var askedYear = version?.Trim();
+                    if (!string.IsNullOrEmpty(askedYear) && !askedYear.Equals("auto", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(askedYear, pinned.Year, StringComparison.Ordinal))
+                    {
+                        return JsonConvert.SerializeObject(new
+                        {
+                            ok = false,
+                            error = "pid " + pid.Value + " is Revit " + pinned.Year + ", not " + askedYear + ". " +
+                                    "Pass version='" + pinned.Year + "' (or 'auto') with this pid.",
+                            recommended_next_tool = "revit_list_available_targets"
+                        });
+                    }
+                    newTarget = pinned.Year;
+                }
+                else if (!string.IsNullOrWhiteSpace(version) && !version.Equals("auto", StringComparison.OrdinalIgnoreCase))
                 {
                     var trimmed = version.Trim();
 
@@ -2287,7 +2333,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                     newTarget = trimmed;
                 }
 
-                ToolGateway.Reconnect(newTarget);
+                ToolGateway.Reconnect(newTarget, pid);
 
                 if (!verify)
                 {
@@ -2296,6 +2342,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                         ok = true,
                         previousTarget = previousTarget ?? "auto",
                         newTarget = newTarget ?? "auto",
+                        newTargetPid = pid,
                         verified = false,
                         note = "Target updated. Next tool call will connect to new target."
                     });
@@ -2309,6 +2356,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                         ok = true,
                         previousTarget = previousTarget ?? "auto",
                         newTarget = newTarget ?? "auto",
+                        newTargetPid = pid,
                         verified = true,
                         activeView = probe.Value<string>("viewName")
                     });
@@ -2320,6 +2368,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                         ok = true,
                         previousTarget = previousTarget ?? "auto",
                         newTarget = newTarget ?? "auto",
+                        newTargetPid = pid,
                         verified = false,
                         verifyError = verifyEx.Message,
                         note = "Target set, but verify failed. The next tool call may still succeed."

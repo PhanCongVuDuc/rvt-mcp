@@ -3175,7 +3175,7 @@
     },
     {
       "name": "revit_get_current_target",
-      "description_hash": "sha256:ec5bec0fb636c436d2c994d1dc76bf8cfec89b67d57be291c315fb83e7b0e75a",
+      "description_hash": "sha256:20623a7dce87a14dbf98664883c1aec1e0af896a0f510e451b8767d36a4b9325",
       "inputSchema": {
         "properties": {},
         "required": [],
@@ -3993,7 +3993,7 @@
     },
     {
       "name": "revit_list_available_targets",
-      "description_hash": "sha256:5eb528c60c20d77f734777f978a88db67e9954fc15512989b218f203bb2b6e95",
+      "description_hash": "sha256:118c1aab584d0da0830c89d30e95ebd1346adf0b8b20183a927ea49eedf50745",
       "inputSchema": {
         "properties": {},
         "required": [],
@@ -5954,9 +5954,13 @@
     },
     {
       "name": "revit_switch_target",
-      "description_hash": "sha256:dc0fec6fe25dbf57de5a3822ef29933fb75a03434fb9dfff2f8676c4b0fa6330",
+      "description_hash": "sha256:45b10ba760aff86b326a282b79848cfa5b76d2d82075d2def2026bccf713ed3b",
       "inputSchema": {
         "properties": {
+          "pid": {
+            "description": "",
+            "type": "Nullable`1"
+          },
           "verify": {
             "description": "",
             "type": "Boolean"

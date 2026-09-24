@@ -29,6 +29,15 @@ namespace RvtMcp.Server
         /// </summary>
         public static string Target { get; set; }
 
+        /// <summary>
+        /// Pinned Revit process id, set by revit_switch_target(pid). null = the Revit that last wrote the
+        /// year file of <see cref="Target"/> - which, with two Revits of one year, is whichever started last.
+        /// </summary>
+        public static int? TargetPid { get; set; }
+
+        /// <summary>Tests point discovery at a temp folder instead of %LOCALAPPDATA%\RvtMcp.</summary>
+        internal static string DiscoveryDirOverride { get; set; }
+
         /// <summary>All valid --target values (4-digit calendar years).</summary>
         public static readonly string[] AllVersions = { "2022", "2023", "2024", "2025", "2026", "2027" };
 
@@ -39,6 +48,7 @@ namespace RvtMcp.Server
 
         public static string DiscoveryDir()
         {
+            if (DiscoveryDirOverride != null) return DiscoveryDirOverride;
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "RvtMcp");
@@ -50,7 +60,7 @@ namespace RvtMcp.Server
         }
 
         /// <summary>
-        /// Returns every alive Revit plugin advertising itself on this machine.
+        /// Returns every alive Revit plugin advertising itself on this machine, one entry per process.
         /// Used by the revit_list_available_targets MCP tool.
         /// </summary>
         public static IReadOnlyList<DiscoveredRevit> ListAvailable()
@@ -59,20 +69,57 @@ namespace RvtMcp.Server
             var dir = DiscoveryDir();
             if (!Directory.Exists(dir)) return results;
 
+            // Per-pid files first (revit-YYYY-PID.json): the year file of a plugin that writes them is a copy of
+            // one of them. A year file whose pid has no per-pid file comes from an older plugin and still counts.
+            var paths = new List<string>(Directory.GetFiles(dir, "revit-*-*.json"));
             foreach (var year in AllVersions)
             {
                 var path = Path.Combine(dir, DiscoveryFileName(year));
-                if (!File.Exists(path)) continue;
-                if (TryParseDiscovery(path, out var d)) results.Add(d);
+                if (File.Exists(path)) paths.Add(path);
             }
+
+            var seenPids = new HashSet<int>();
+            foreach (var path in paths)
+            {
+                if (!TryParseDiscovery(path, out var d)) continue;
+                if (d.Pid > 0 && !seenPids.Add(d.Pid)) continue;
+                results.Add(d);
+            }
+
+            results.Sort((a, b) =>
+            {
+                var byYear = Array.IndexOf(AllVersions, a.Year).CompareTo(Array.IndexOf(AllVersions, b.Year));
+                return byYear != 0 ? byYear : a.Pid.CompareTo(b.Pid);
+            });
             return results;
         }
 
-        public static bool TryReadTcp(out int port, out string token, out string version)
+        public static DiscoveredRevit FindByPid(int pid)
+        {
+            foreach (var d in ListAvailable())
+            {
+                if (d.Pid == pid) return d;
+            }
+            return null;
+        }
+
+        public static bool TryReadTcp(out int port, out string token, out string version, out int pid)
         {
             port = 0;
             token = null;
             version = null;
+            pid = 0;
+
+            if (TargetPid.HasValue)
+            {
+                var pinned = FindByPid(TargetPid.Value);
+                if (pinned == null || !string.Equals(pinned.Transport, "tcp", StringComparison.OrdinalIgnoreCase)) return false;
+                port = pinned.Port;
+                token = pinned.AuthToken;
+                version = pinned.Year;
+                pid = pinned.Pid;
+                return true;
+            }
 
             var preferred = Target != null ? new[] { Target } : TcpPriority;
             foreach (var year in preferred)
@@ -83,16 +130,29 @@ namespace RvtMcp.Server
                 port = d.Port;
                 token = d.AuthToken;
                 version = d.Year;
+                pid = d.Pid;
                 return true;
             }
             return false;
         }
 
-        public static bool TryReadPipe(out string pipeName, out string token, out string version)
+        public static bool TryReadPipe(out string pipeName, out string token, out string version, out int pid)
         {
             pipeName = null;
             token = null;
             version = null;
+            pid = 0;
+
+            if (TargetPid.HasValue)
+            {
+                var pinned = FindByPid(TargetPid.Value);
+                if (pinned == null || !string.Equals(pinned.Transport, "pipe", StringComparison.OrdinalIgnoreCase)) return false;
+                pipeName = pinned.PipeName;
+                token = pinned.AuthToken;
+                version = pinned.Year;
+                pid = pinned.Pid;
+                return true;
+            }
 
             var preferred = Target != null ? new[] { Target } : PipePriority;
             foreach (var year in preferred)
@@ -103,6 +163,7 @@ namespace RvtMcp.Server
                 pipeName = d.PipeName;
                 token = d.AuthToken;
                 version = d.Year;
+                pid = d.Pid;
                 return true;
             }
             return false;
