@@ -1,6 +1,9 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using RvtMcp.Plugin;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -41,6 +44,69 @@ namespace RvtMcp.Tests
             {
                 try { Directory.Delete(_tempDir, true); } catch { }
             }
+        }
+
+        [Fact]
+        public void ConcurrentJournalAppendsRetainEveryCompleteUniqueRow()
+        {
+            var succeeded = new bool[800];
+            Parallel.For(0, succeeded.Length, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
+            {
+                succeeded[i] = SendCodeJournal.TryAppend(_activeConfig, "stress",
+                    "// " + i + "\n" + new string('x', 2048), true, 1, null, null);
+            });
+
+            Assert.All(succeeded, value => Assert.True(value));
+            var rows = File.ReadAllLines(SendCodeJournal.JournalPath).Select(JObject.Parse).ToArray();
+            Assert.Equal(800, rows.Length);
+            Assert.Equal(800, rows.Select(row => row.Value<string>("code_hash")).Distinct().Count());
+        }
+
+        [Fact]
+        public void ConcurrentCallLogAppendsRetainEveryCompleteUniqueRow()
+        {
+            Parallel.For(0, 800, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
+                McpLogger.Log("probe_" + i, "{}", true, 1,
+                    resultJson: JsonConvert.SerializeObject(new { payload = new string('x', 2048) })));
+
+            var rows = File.ReadAllLines(McpLogger.CurrentLogPath).Select(JObject.Parse).ToArray();
+            Assert.Equal(800, rows.Length);
+            Assert.Equal(800, rows.Select(row => row.Value<string>("tool")).Distinct().Count());
+        }
+
+        [Fact]
+        public void ConcurrentJournalRotationRetainsArchiveAndAllNewRows()
+        {
+            File.WriteAllText(SendCodeJournal.JournalPath,
+                JsonConvert.SerializeObject(new { padding = new string('x', (int)SendCodeJournal.MaxFileSize) }) + "\n");
+            var succeeded = new bool[200];
+            Parallel.For(0, succeeded.Length, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
+                succeeded[i] = SendCodeJournal.TryAppend(_activeConfig, "stress", "return " + i + ";", true, 1, null, null));
+
+            Assert.All(succeeded, value => Assert.True(value));
+            var archive = Assert.Single(Directory.GetFiles(_tempDir, "send-code-journal-*.jsonl"));
+            Assert.NotNull(JObject.Parse(File.ReadAllText(archive))["padding"]);
+            var rows = File.ReadAllLines(SendCodeJournal.JournalPath).Select(JObject.Parse).ToArray();
+            Assert.Equal(200, rows.Length);
+            Assert.Equal(200, rows.Select(row => row.Value<string>("code_hash")).Distinct().Count());
+        }
+
+        [Fact]
+        public void ConcurrentReadersAndMaintenanceDoNotDropAppends()
+        {
+            Assert.True(SendCodeJournal.TryAppend(_activeConfig, "seed", "return 42;", true, 1, null, null));
+            var seedHash = BakeRedactor.HashBody("return 42;");
+            Parallel.For(0, 200, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
+            {
+                Assert.Equal("return 42;", SendCodeJournal.TryFindCodeByHash(seedHash));
+                SendCodeJournal.RunMaintenance(_activeConfig);
+                Assert.True(SendCodeJournal.TryAppend(_activeConfig, "stress", "// " + i, true, 1, null, null));
+                McpLogger.Log("probe_" + i, "{}", true, 1);
+                SessionLogHistoryLoader.LoadPastSessions(Path.GetDirectoryName(McpLogger.CurrentLogPath), "other", 0);
+            });
+
+            Assert.Equal(201, File.ReadAllLines(SendCodeJournal.JournalPath).Length);
+            Assert.Equal(200, File.ReadAllLines(McpLogger.CurrentLogPath).Length);
         }
 
         [Fact]
@@ -125,6 +191,80 @@ namespace RvtMcp.Tests
             // Archived file should exist
             var expectedArchive = Path.Combine(_tempDir, "send-code-journal-20260709-120000.jsonl");
             Assert.True(File.Exists(expectedArchive));
+        }
+
+        [Fact]
+        public void TryFindCodeByHash_ReturnsRedactedBody_WhenJournalHasMatch()
+        {
+            var code = "var p = \"C:\\\\Users\\\\Me\\\\file.rvt\";";
+            SendCodeJournal.TryAppend(_activeConfig, "session1", code, true, 50, null, null);
+
+            var body = SendCodeJournal.TryFindCodeByHash(BakeRedactor.HashBody(code));
+
+            Assert.NotNull(body);
+            // Journal bodies are bake-redacted — placeholders, not the raw path.
+            Assert.Contains("<project_file>", body);
+            Assert.DoesNotContain("C:\\Users\\Me", body);
+        }
+
+        [Fact]
+        public void TryFindCodeByHash_ReturnsNull_WhenMissingOrNoMatch()
+        {
+            Assert.Null(SendCodeJournal.TryFindCodeByHash("deadbeef")); // no journal file
+            Assert.Null(SendCodeJournal.TryFindCodeByHash(null));
+
+            SendCodeJournal.TryAppend(_activeConfig, "session1", "var x = 1;", true, 50, null, null);
+            Assert.Null(SendCodeJournal.TryFindCodeByHash("deadbeef")); // file exists, hash doesn't
+        }
+
+        [Fact]
+        public void TryFindCodeByHash_ScansRotatedArchives()
+        {
+            // Body lives only in a rotated archive — the live journal has no match.
+            var code = "var archived = 42;";
+            var hash = BakeRedactor.HashBody(code);
+            var archiveLine = JsonConvert.SerializeObject(new
+            {
+                timestamp = "2026-09-01T00:00:00Z",
+                session_id = "old-session",
+                success = true,
+                duration_ms = 1L,
+                code_hash = hash,
+                code_length = code.Length,
+                error = (string)null,
+                code,
+                result = (string)null
+            });
+            File.WriteAllText(
+                Path.Combine(_tempDir, "send-code-journal-20260901-000000.jsonl"),
+                archiveLine + "\n");
+            SendCodeJournal.TryAppend(_activeConfig, "session1", "var other = 0;", true, 10, null, null);
+
+            Assert.Equal(code, SendCodeJournal.TryFindCodeByHash(hash));
+        }
+
+        [Fact]
+        public void TryFindCodeByHash_LiveFileWinsOverArchive()
+        {
+            var code = "var x = 1;";
+            var hash = BakeRedactor.HashBody(code);
+            // Same hash in an archive with a different body — the live file is newer
+            // and must win, so the lookup returns its (redacted) body first.
+            var archiveLine = JsonConvert.SerializeObject(new
+            {
+                timestamp = "2026-09-01T00:00:00Z",
+                session_id = "old",
+                code_hash = hash,
+                code = "STALE_ARCHIVE_BODY"
+            });
+            File.WriteAllText(
+                Path.Combine(_tempDir, "send-code-journal-20260901-000000.jsonl"),
+                archiveLine + "\n");
+            SendCodeJournal.TryAppend(_activeConfig, "session1", code, true, 10, null, null);
+
+            var body = SendCodeJournal.TryFindCodeByHash(hash);
+            Assert.Equal("var x = 1;", body);
+            Assert.NotEqual("STALE_ARCHIVE_BODY", body);
         }
 
         [Fact]

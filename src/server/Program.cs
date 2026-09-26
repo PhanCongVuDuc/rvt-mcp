@@ -8,6 +8,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Linq;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -241,13 +242,19 @@ namespace RvtMcp.Server
         // agent asking "list Revit tools" returns nothing even though 224 tools are exposed.
         // Anthropic truncates this field at 2KB; the keyword-dense first paragraph carries
         // the discoverability load if the SDK or proxy truncates later.
+        // InformationalVersion carries "+githash"; report clean semver to MCP clients.
+        private static readonly string ServerVersion =
+            (Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion ?? "0.0.0").Split('+')[0];
+
         private static void ConfigureMcpServerOptions(ModelContextProtocol.Server.McpServerOptions opts)
         {
             opts.ServerInfo = new ModelContextProtocol.Protocol.Implementation
             {
                 Name = "rvt-mcp",
                 Title = "Revit MCP",
-                Version = "0.6.0",
+                Version = ServerVersion,
                 Description = "Model Context Protocol gateway for Autodesk Revit 2022-2027",
                 WebsiteUrl = "https://github.com/bimwright/rvt-mcp"
             };
@@ -279,7 +286,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 - materials: list_materials, assign_material_to_element
 - geometry: clash_detection, measure_distance_between_elements
 - rooms: list_rooms, compute_room_finishes
-- links: link_revit_model, acquire_coordinates_from_link
+- links: project coordinates, link/acquire/publish
 - parameters: create_shared_parameter, create_project_parameter
 - organization: apply_view_template, save_selection
 - workflows: workflow_clash_review, workflow_model_audit
@@ -1008,12 +1015,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_create_point_based_element", Destructive = false), System.ComponentModel.Description("Create a point-based element (door, window, furniture). Params: typeId (from get_available_family_types), x/y/z (mm), level (name).")]
-        public static async Task<string> CreatePointBasedElement(long typeId, double x, double y, double z = 0, string level = "")
+        [McpServerTool(Name = "revit_create_point_based_element", Destructive = false), System.ComponentModel.Description("Create a OneLevelBased or OneLevelBasedHosted family (door, window, furniture). typeId from get_available_family_types; x/y/z are model coordinates in mm; level is a name. Hosted families require host_id of the intended local host; no host is inferred. Non-hosted families ignore host_id with a warning. Work-plane/face and other placement types are unsupported. Validates actual host and position within 1 mm before commit; returns placement_type, actual host_id and location_mm.")]
+        public static async Task<string> CreatePointBasedElement(long typeId, double x, double y, double z = 0, string level = "", long? host_id = null)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("create_point_based_element", new { typeId, x, y, z, level });
+                var result = await ToolGateway.SendToRevit("create_point_based_element", new { typeId, x, y, z, level, host_id });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1667,12 +1674,12 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_create_pipe", Destructive = false), System.ComponentModel.Description("Create a plumbing pipe between two points (mm). pipeTypeId/systemTypeId/levelId default to first available / nearest level. Optional diameter (mm).")]
-        public static async Task<string> CreatePipe(double startX, double startY, double startZ, double endX, double endY, double endZ, long? pipeTypeId = null, long? systemTypeId = null, long? levelId = null, double? diameter = null)
+        [McpServerTool(Name = "revit_create_pipe", Destructive = false), System.ComponentModel.Description("Create a pipe (mm). With systemTypeId omitted, a unique open piping End connector within 1 mm of start supplies system type and diameter and is connected immediately. Multiple matches or conflicting diameter fail without creating. Use startElementId/startConnectorId (Connector.Id) to disambiguate; omit systemTypeId with these selectors. No match falls back to first system type. Explicit systemTypeId creates an independent pipe. Result reports actual type/diameter and system_type_source=connector|explicit|default. pipeTypeId defaults to first available; levelId to nearest level.")]
+        public static async Task<string> CreatePipe(double startX, double startY, double startZ, double endX, double endY, double endZ, long? pipeTypeId = null, long? systemTypeId = null, long? levelId = null, double? diameter = null, long? startElementId = null, int? startConnectorId = null)
         {
             try
             {
-                var result = await ToolGateway.SendToRevit("create_pipe", new { start_x = startX, start_y = startY, start_z = startZ, end_x = endX, end_y = endY, end_z = endZ, pipe_type_id = pipeTypeId, system_type_id = systemTypeId, level_id = levelId, diameter });
+                var result = await ToolGateway.SendToRevit("create_pipe", new { start_x = startX, start_y = startY, start_z = startZ, end_x = endX, end_y = endY, end_z = endZ, pipe_type_id = pipeTypeId, system_type_id = systemTypeId, level_id = levelId, diameter, start_element_id = startElementId, start_connector_id = startConnectorId });
                 return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -1722,7 +1729,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_list_mep_systems", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("List all MEP systems (mechanical/HVAC, piping/plumbing, electrical). domainFilter: all|mechanical|piping|electrical. Returns id, name, domain, system type, element count, connectivity status.")]
+        [McpServerTool(Name = "revit_list_mep_systems", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("List all MEP systems (mechanical/HVAC, piping/plumbing, electrical). domainFilter: all|mechanical|piping|electrical. element_count is pipes and fittings, ducts and fittings, or electrical circuit members. terminal_count excludes base equipment. Membership read failures return an error, never zero counts. Returns id, name, domain, system type, both counts, and connectivity status.")]
         public static async Task<string> ListMepSystems(string domainFilter = "all", int limit = 1000)
         {
             try
@@ -1733,7 +1740,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_get_system_inventory", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Return the full element inventory of one MEP system: all member elements with category/type plus a category breakdown. Identify by systemId or systemName.")]
+        [McpServerTool(Name = "revit_get_system_inventory", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Return the full element inventory of one MEP system: network members, terminals, and base equipment, deduplicated by element ID, with category/type plus a category breakdown. Membership read failures return an error. Identify by systemId or systemName.")]
         public static async Task<string> GetSystemInventory(long? systemId = null, string systemName = "", bool includeParameters = false, int limit = 2000)
         {
             try
@@ -1755,7 +1762,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_connect_mep_elements", Destructive = false), System.ComponentModel.Description("Connect the nearest open connectors of two MEP elements. Optionally pin specific connectors via connectorIndex1/connectorIndex2 — these are Connector.Id values (the connector_id field from get_mep_element_connectors), NOT ordinals. Domains must match.")]
+        [McpServerTool(Name = "revit_connect_mep_elements", Destructive = false), System.ComponentModel.Description("Connect physical connectors of two MEP elements with matching domains. Different assigned piping/HVAC system type IDs are rejected with connected=false and both types; unassigned equipment ports are allowed. A connection does not promise system merging. Optionally pin connectorIndex1/connectorIndex2 using Connector.Id, not ordinals. An existing direct connection or connection through one shared pipe/duct fitting is returned as already_connected=true without mutation.")]
         public static async Task<string> ConnectMepElements(long elementId1, long elementId2, long? connectorIndex1 = null, long? connectorIndex2 = null)
         {
             try
@@ -1811,7 +1818,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_analyze_mep_network", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Analyze one MEP system's topology: category breakdown, connectivity health, base equipment, open connector count, and issues/recommendations. Identify by systemId or systemName.")]
+        [McpServerTool(Name = "revit_analyze_mep_network", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Analyze one MEP system. For piping and HVAC, element_count, category_breakdown, and open_connector_count come from the pipe or duct network; terminal_count excludes base equipment. Empty-system advice requires both counts zero and no base equipment. Membership read failures return an error. Electrical element_count is the circuit members. Identify by systemId or systemName.")]
         public static async Task<string> AnalyzeMepNetwork(long? systemId = null, string systemName = "")
         {
             try
@@ -1983,7 +1990,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
     [McpServerToolType, Toolset("meta")]
     public class SendCodeTools
     {
-        [McpServerTool(Name = "revit_send_code_to_revit"), System.ComponentModel.Description("Compile + run C# inside Revit for workflows not covered by typed tools. Variables: doc (Document), uidoc (UIDocument), app (UIApplication) - doc and uidoc are null when no model is open, which is legal: use app.OpenAndActivateDocument(path) to open one, or prefer the typed revit_open_model tool. Write body only, auto-wrapped in static Run(UIApplication). Must end with 'return ...;'. Output above 700 KiB auto-spills to a local same-machine file with schema and preview; there is no output parameter. Remote clients receive preview but cannot read the local file. Namespaces: System, System.Linq, System.Collections.Generic, Autodesk.Revit.DB, Autodesk.Revit.UI.")]
+        [McpServerTool(Name = "revit_send_code_to_revit"), System.ComponentModel.Description("Compile + run C# inside Revit for workflows not covered by typed tools. Variables: doc (Document), uidoc (UIDocument), app (UIApplication) - doc and uidoc are null when no model is open, which is legal: use app.OpenAndActivateDocument(path) to open one, or prefer the typed revit_open_model tool. Write a C# body ending in return; helper type declarations may accompany the body. Or provide a complete public McpDynamicScript with public static object Run(UIApplication app). For transactions/StairsEditScope.Commit, RvtMcp.Plugin.SafeFailuresPreprocessor records/deletes warnings and rolls back errors; report HadWarnings/Messages as committed_with_warnings; inspect HadErrors and commit status before reporting success. Output above 700 KiB auto-spills to a local same-machine file with schema and preview; there is no output parameter. Remote clients receive preview but cannot read the local file. Namespaces: System, System.Linq, System.Collections.Generic, Autodesk.Revit.DB, Autodesk.Revit.UI.")]
         public static async Task<string> SendCodeToRevit(string code)
         {
             try
@@ -3687,7 +3694,29 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_acquire_coordinates_from_link", Destructive = false), System.ComponentModel.Description("Acquire shared coordinates from a Revit link instance.")]
+        [McpServerTool(Name = "revit_get_project_coordinate_system", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Read the complete project coordinate setup: immutable Internal Origin, Project Base Point, Survey Point, active and named Project Locations, coordinates under each location, angle to True North, and geographic site data. Lengths are returned in mm; angles and latitude/longitude in degrees.")]
+        public static async Task<string> GetProjectCoordinateSystem()
+        {
+            try
+            {
+                var result = await ToolGateway.SendToRevit("get_project_coordinate_system", new { });
+                return JsonConvert.SerializeObject(result, Formatting.Indented);
+            }
+            catch (Exception ex) { return $"Error: {ex.Message}"; }
+        }
+
+        [McpServerTool(Name = "revit_get_link_coordinate_system", ReadOnly = true, Idempotent = true), System.ComponentModel.Description("Inspect a Revit or CAD link's instance and total transforms and map its origins into host internal/shared coordinates. For a loaded Revit link, also returns its Internal Origin, Project Base Point, Survey Point, and all linked Project Locations with ids. Use the returned Project Location id as linkedProjectLocationId for revit_publish_coordinates_to_link.")]
+        public static async Task<string> GetLinkCoordinateSystem(long linkInstanceId)
+        {
+            try
+            {
+                var result = await ToolGateway.SendToRevit("get_link_coordinate_system", new { link_instance_id = linkInstanceId });
+                return JsonConvert.SerializeObject(result, Formatting.Indented);
+            }
+            catch (Exception ex) { return $"Error: {ex.Message}"; }
+        }
+
+        [McpServerTool(Name = "revit_acquire_coordinates_from_link", Destructive = false), System.ComponentModel.Description("Acquire shared coordinates from a Revit link or linked CAD instance into the host project. Requires confirm=true and modifies the host shared-coordinate system.")]
         public static async Task<string> AcquireCoordinatesFromLink(long linkInstanceId, bool confirm = false)
         {
             try
@@ -3698,7 +3727,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
-        [McpServerTool(Name = "revit_publish_coordinates_to_link", Destructive = false), System.ComponentModel.Description("Publish shared coordinates to a Revit link instance.")]
+        [McpServerTool(Name = "revit_publish_coordinates_to_link", Destructive = false), System.ComponentModel.Description("Publish host shared coordinates to a loaded Revit link. Call revit_get_link_coordinate_system first to discover linkedProjectLocationId; omit it to target the linked active Project Location. Requires confirm=true. CAD links are not supported.")]
         public static async Task<string> PublishCoordinatesToLink(long linkInstanceId, long? linkedProjectLocationId = null, bool confirm = false)
         {
             try

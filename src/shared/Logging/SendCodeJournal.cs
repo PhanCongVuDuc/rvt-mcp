@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace RvtMcp.Plugin
 {
@@ -16,15 +18,19 @@ namespace RvtMcp.Plugin
 
         public static void RunMaintenance(RvtMcpConfig config, DateTimeOffset? now = null)
         {
-            var utc = now ?? DateTimeOffset.UtcNow;
-            var root = RootDir;
             try
             {
-                Directory.CreateDirectory(root);
+                McpLogger.WithFileLock(JournalPath, () =>
+                {
+                    var utc = now ?? DateTimeOffset.UtcNow;
+                    var root = RootDir;
+                    Directory.CreateDirectory(root);
+                    var isActive = config != null && config.IsPersistSendCodeBodiesActive(utc);
+                    MaybePurge(root, isActive, utc);
+                    return true;
+                });
             }
-            catch { }
-            var isActive = config != null && config.IsPersistSendCodeBodiesActive(utc);
-            MaybePurge(root, isActive, utc);
+            catch { } // best-effort maintenance; never mutate without the lock
         }
 
         public static bool TryAppend(
@@ -37,14 +43,21 @@ namespace RvtMcp.Plugin
             string resultJson,
             DateTimeOffset? now = null)
         {
-            var utc = now ?? DateTimeOffset.UtcNow;
-            var root = RootDir;
-
             try
             {
-                Directory.CreateDirectory(root);
+                return McpLogger.WithFileLock(JournalPath, () => AppendUnderLock(
+                    config, sessionId, rawCode, success, durationMs, error, resultJson, now));
             }
-            catch { }
+            catch { return false; } // includes lock timeout; no unlocked fallback
+        }
+
+        private static bool AppendUnderLock(
+            RvtMcpConfig config, string sessionId, string rawCode, bool success,
+            long durationMs, string error, string resultJson, DateTimeOffset? now)
+        {
+            var utc = now ?? DateTimeOffset.UtcNow;
+            var root = RootDir;
+            Directory.CreateDirectory(root);
 
             var isActive = config != null && config.IsPersistSendCodeBodiesActive(utc);
             
@@ -80,6 +93,65 @@ namespace RvtMcp.Plugin
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Journal body matching a code_hash, or null. Scans the live journal then
+        /// rotated archives newest-first; first match wins (same hash ⇒ same body).
+        /// Bodies are bake-redacted (paths/secrets become placeholders) — callers
+        /// re-running a recovered body must surface that caveat.
+        /// </summary>
+        public static string TryFindCodeByHash(string codeHash)
+        {
+            if (string.IsNullOrEmpty(codeHash)) return null;
+            try
+            {
+                // File.ReadLines otherwise denies a concurrent writer's open on Windows.
+                return McpLogger.WithFileLock(JournalPath, () =>
+                {
+                    foreach (var file in JournalFilesNewestFirst())
+                    {
+                        var body = FindInFile(file, codeHash);
+                        if (body != null) return body;
+                    }
+                    return (string)null;
+                });
+            }
+            catch { return null; }
+        }
+
+        private static IEnumerable<string> JournalFilesNewestFirst()
+        {
+            var dir = Path.GetDirectoryName(JournalPath);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) yield break;
+
+            if (File.Exists(JournalPath)) yield return JournalPath;
+
+            // Archive names carry a timestamp → ordinal-desc = newest first.
+            var archives = Directory.GetFiles(dir, "send-code-journal-*.jsonl");
+            Array.Sort(archives, StringComparer.OrdinalIgnoreCase);
+            for (var i = archives.Length - 1; i >= 0; i--)
+                yield return archives[i];
+        }
+
+        private static string FindInFile(string path, string codeHash)
+        {
+            try
+            {
+                foreach (var line in File.ReadLines(path))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    try
+                    {
+                        var obj = JObject.Parse(line);
+                        if (string.Equals(obj.Value<string>("code_hash"), codeHash, StringComparison.Ordinal))
+                            return obj.Value<string>("code");
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return null;
         }
 
         private static void MaybePurge(string rootDir, bool isActive, DateTimeOffset now)

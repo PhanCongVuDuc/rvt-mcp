@@ -1,6 +1,6 @@
 {
   "generated_by": "ToolsListSnapshotTests",
-  "tool_count": 231,
+  "tool_count": 233,
   "tools": [
     {
       "name": "revit_accept_bake_suggestion",
@@ -33,7 +33,7 @@
     },
     {
       "name": "revit_acquire_coordinates_from_link",
-      "description_hash": "sha256:be275c239b5bb251df5e4cdd938abf8f2121bdf0ff3246b5fc8d97893257993a",
+      "description_hash": "sha256:b014dcf5ad6e154aca513ee8ec038f9e780450fb0924dea31474b4ab6a9a12bc",
       "inputSchema": {
         "properties": {
           "confirm": {
@@ -177,7 +177,7 @@
     },
     {
       "name": "revit_analyze_mep_network",
-      "description_hash": "sha256:c4cad77deda2e5b4464b42c66ff5bd2f4d6cc84b778a43b6f0cf9051136154e2",
+      "description_hash": "sha256:80b73ac94040560fbf667dd30ec1c4cae2a876b5da62ee7fbd40df19c946dbcc",
       "inputSchema": {
         "properties": {
           "systemId": {
@@ -848,7 +848,7 @@
     },
     {
       "name": "revit_connect_mep_elements",
-      "description_hash": "sha256:5d751e7282f295e0632cf76c4d17330f6e48c452d96fe01fed81dfd0f6dab5f0",
+      "description_hash": "sha256:c83054916be1d0f11ee3216abdb92b5329702ba4d200827a88481befd8a5222d",
       "inputSchema": {
         "properties": {
           "connectorIndex1": {
@@ -1571,7 +1571,7 @@
     },
     {
       "name": "revit_create_pipe",
-      "description_hash": "sha256:97d4d19d5d45b973d5860349ef497883379b41ccae726e28537f785a45bb4f50",
+      "description_hash": "sha256:cfe46fbb009a29ca592ac2e08ee9a205bc0ebfd38a33b8e4bdde83762b8c8899",
       "inputSchema": {
         "properties": {
           "diameter": {
@@ -1595,6 +1595,14 @@
             "type": "Nullable`1"
           },
           "pipeTypeId": {
+            "description": "",
+            "type": "Nullable`1"
+          },
+          "startConnectorId": {
+            "description": "",
+            "type": "Nullable`1"
+          },
+          "startElementId": {
             "description": "",
             "type": "Nullable`1"
           },
@@ -1649,9 +1657,13 @@
     },
     {
       "name": "revit_create_point_based_element",
-      "description_hash": "sha256:0bcdd7ec2ca2ef5f9367c146cc98c772d709df2a69d274556b0b2a2d7f0290a4",
+      "description_hash": "sha256:a8f332b24132839ceb99e038ce05bb8a353155ae8b5cda3924fa143f04bacbc7",
       "inputSchema": {
         "properties": {
+          "host_id": {
+            "description": "",
+            "type": "Nullable`1"
+          },
           "level": {
             "description": "",
             "type": "String"
@@ -3424,6 +3436,22 @@
       }
     },
     {
+      "name": "revit_get_link_coordinate_system",
+      "description_hash": "sha256:1773841f1de5a695de6f3a43b4550c497e4f039dcc4bfce5eb2a67fb6dca1fdb",
+      "inputSchema": {
+        "properties": {
+          "linkInstanceId": {
+            "description": "",
+            "type": "Int64"
+          }
+        },
+        "required": [
+          "linkInstanceId"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "revit_get_link_elements",
       "description_hash": "sha256:7c0aa297ac9801dfe61f25c48e9e72aae7213a0e524e58afac6e9e61b7e026ae",
       "inputSchema": {
@@ -3622,6 +3650,15 @@
       }
     },
     {
+      "name": "revit_get_project_coordinate_system",
+      "description_hash": "sha256:f4202c231dbbedd78545b79d6fd4958abecfd6ad8eeb9a4a22b80ef645e4bb60",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
       "name": "revit_get_room_boundaries",
       "description_hash": "sha256:402358b0fb407b2d960c4b9c5577020f96c83d11f2b9c28f0042e6d7e978146c",
       "inputSchema": {
@@ -3799,7 +3836,7 @@
     },
     {
       "name": "revit_get_system_inventory",
-      "description_hash": "sha256:e1f0a205666e6057da9ce1bb820e045f781657450980255c34463808c3a75f15",
+      "description_hash": "sha256:5b757c6b13ccdfb9f7782872fd2d655d7c77b33d38ee6987d730d8d64d5ad4be",
       "inputSchema": {
         "properties": {
           "includeParameters": {
@@ -4288,7 +4325,7 @@
     },
     {
       "name": "revit_list_mep_systems",
-      "description_hash": "sha256:1555d876a28dbf75d1e26f92e264d1b57a58f076ca017ae45059d066d218a606",
+      "description_hash": "sha256:feaf392213f1d2eb145c215ca4f6292a881d5d5598b65b7f0cfc12113892a5a2",
       "inputSchema": {
         "properties": {
           "domainFilter": {
@@ -4917,7 +4954,7 @@
     },
     {
       "name": "revit_publish_coordinates_to_link",
-      "description_hash": "sha256:215975623405a99ad8eb4c8ae467fb1ef65c87feee877379efa90fcbdd7a0e65",
+      "description_hash": "sha256:0fcffeed77ed40daedd62d0dff713aafbc765afee259f83594f5fe35040788db",
       "inputSchema": {
         "properties": {
           "confirm": {
@@ -5289,7 +5326,7 @@
     },
     {
       "name": "revit_send_code_to_revit",
-      "description_hash": "sha256:0256290a973b4853a2a2f4bf152da6473ab358f2dc74ac7165547e98366439d6",
+      "description_hash": "sha256:7f955f4374dd746d188616ef9ddc4db8c804ae27adb5be9973ca1c54ccec070b",
       "inputSchema": {
         "properties": {
           "code": {
