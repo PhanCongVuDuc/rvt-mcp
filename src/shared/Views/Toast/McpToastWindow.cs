@@ -1,9 +1,12 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
@@ -15,6 +18,11 @@ namespace RvtMcp.Plugin.Views.Toast
     internal sealed class McpToastWindow : Window
     {
         private const double CardWidth = 340;
+        private const double BrandRestOpacity = 0.3;
+        private const double BrandSettleOpacity = 0.8;
+        private const int GwlExStyle = -20;
+        private const long WsExNoActivate = 0x08000000L;
+        private const long WsExToolWindow = 0x00000080L;
 
         private readonly Action<McpToastWindow> _onClosed;
         private readonly TextBlock _iconText;
@@ -23,6 +31,10 @@ namespace RvtMcp.Plugin.Views.Toast
         private readonly TextBlock _summaryText;
         private readonly TextBlock _detailText;
         private readonly TextBlock _durationText;
+        private readonly TextBlock _brandText;
+        private readonly TextBlock _brandShine;
+        private readonly TranslateTransform _brandSweep = new TranslateTransform(-0.75, 0);
+        private readonly TranslateTransform _shineSweep = new TranslateTransform(-0.75, 0);
         private readonly Border _thumbnailHost;
         private readonly Image _thumbnailImage;
         private readonly Border _root;
@@ -195,15 +207,57 @@ namespace RvtMcp.Plugin.Views.Toast
             Grid.SetRow(_thumbnailHost, 4);
             content.Children.Add(_thumbnailHost);
 
+            var footer = new DockPanel { Margin = new Thickness(24, 6, 0, 0) };
+
+            _brandText = new TextBlock
+            {
+                // Logo casing and colours. Brightness lives in the OpacityMask: dimmed at
+                // rest, then a lit front wipes left→right once ~1.3 s after the card shows
+                // (WipeBrand) and the wordmark settles at BrandSettleOpacity.
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = BrandAssets.ProductTag,
+                OpacityMask = BuildBrandMask(_brandSweep),
+                Inlines =
+                {
+                    new Run(BrandAssets.WordmarkLeft) { Foreground = McpToastTheme.BrandBim },
+                    new Run(BrandAssets.WordmarkRight) { Foreground = McpToastTheme.BrandWright }
+                }
+            };
+
+            _brandShine = new TextBlock
+            {
+                // The wordmark again in lighter tints, masked to a narrow band that sweeps
+                // with the wipe — the wave passes inside the letterforms.
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+                OpacityMask = BuildShineMask(_shineSweep),
+                Inlines =
+                {
+                    new Run(BrandAssets.WordmarkLeft) { Foreground = McpToastTheme.BrandBimShine },
+                    new Run(BrandAssets.WordmarkRight) { Foreground = McpToastTheme.BrandWrightShine }
+                }
+            };
+
+            var brandCell = new Grid { VerticalAlignment = VerticalAlignment.Center };
+            brandCell.Children.Add(_brandText);
+            brandCell.Children.Add(_brandShine);
+            DockPanel.SetDock(brandCell, Dock.Right);
+            footer.Children.Add(brandCell);
+
             _durationText = new TextBlock
             {
                 Text = FormatDuration(viewModel),
                 FontSize = 11,
                 Foreground = McpToastTheme.TextSecondary,
-                Margin = new Thickness(24, 6, 0, 0)
+                VerticalAlignment = VerticalAlignment.Center
             };
-            Grid.SetRow(_durationText, 5);
-            content.Children.Add(_durationText);
+            footer.Children.Add(_durationText);
+            Grid.SetRow(footer, 5);
+            content.Children.Add(footer);
 
             ApplyViewModelText(viewModel);
             ApplyThumbnail(viewModel.ThumbnailPath);
@@ -216,6 +270,7 @@ namespace RvtMcp.Plugin.Views.Toast
             {
                 _isMouseOver = true;
                 _autoDismissTimer.Stop();
+                WipeBrand(150);
             };
             MouseLeave += (_, __) =>
             {
@@ -241,6 +296,10 @@ namespace RvtMcp.Plugin.Views.Toast
             {
                 StartAutoDismiss();
             };
+
+            // Without WS_EX_NOACTIVATE each shown toast can steal keyboard focus
+            // from Revit mid-typing. Clicks are still delivered; only activation is blocked.
+            SourceInitialized += (_, __) => MakeNoActivate();
         }
 
         public void PlayEnterAnimation()
@@ -255,14 +314,31 @@ namespace RvtMcp.Plugin.Views.Toast
             _scaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty,
                 new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
             BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+            WipeBrand();
         }
 
         public void AnimateToPosition(double top, double left)
         {
+            var fromTop = Top;
+            var fromLeft = Left;
+            SetPosition(top, left);
+            // An unshown WPF Window defaults to NaN. It has no position to animate from.
+            if (double.IsNaN(fromTop) || double.IsNaN(fromLeft))
+                return;
+
             var duration = TimeSpan.FromMilliseconds(200);
             var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            BeginAnimation(TopProperty, new DoubleAnimation(top, duration) { EasingFunction = ease });
-            BeginAnimation(LeftProperty, new DoubleAnimation(left, duration) { EasingFunction = ease });
+            BeginAnimation(TopProperty, new DoubleAnimation(fromTop, top, duration) { EasingFunction = ease });
+            BeginAnimation(LeftProperty, new DoubleAnimation(fromLeft, left, duration) { EasingFunction = ease });
+        }
+
+        public void SetPosition(double top, double left)
+        {
+            // A previous animation's held value must not override a direct reflow.
+            BeginAnimation(TopProperty, null);
+            BeginAnimation(LeftProperty, null);
+            Top = top;
+            Left = left;
         }
 
         public void StartAutoDismiss()
@@ -368,6 +444,67 @@ namespace RvtMcp.Plugin.Views.Toast
             }
         }
 
+        /// <summary>Brand reveal: a lit front wipes left→right once while a narrow band of
+        /// lighter letters sweeps through the wordmark in sync, then the wordmark stays lit.
+        /// The pass starts ~1.3 s after the card appears — the delay for a reader's eye to
+        /// land on a fresh toast (delayMs=1300). Replayed quickly on hover.</summary>
+        private void WipeBrand(int delayMs = 1300)
+        {
+            var dur = TimeSpan.FromMilliseconds(800);
+            var ease = new QuadraticEase { EasingMode = EasingMode.EaseInOut };
+            var wipe = new DoubleAnimation(-0.75, 0.75, dur)
+            {
+                BeginTime = TimeSpan.FromMilliseconds(delayMs),
+                EasingFunction = ease
+            };
+            _brandSweep.BeginAnimation(TranslateTransform.XProperty, wipe);
+            _shineSweep.BeginAnimation(TranslateTransform.XProperty, wipe);   // same timeline, two clocks
+        }
+
+        /// <summary>Dim→full-crest→rest alpha profile sliding across the wordmark.</summary>
+        private static LinearGradientBrush BuildBrandMask(TranslateTransform sweep)
+        {
+            return new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0.5),
+                EndPoint = new Point(1, 0.5),
+                RelativeTransform = sweep,
+                GradientStops =
+                {
+                    new GradientStop(Dim(BrandSettleOpacity), 0.00),
+                    new GradientStop(Dim(BrandSettleOpacity), 0.32),
+                    new GradientStop(Dim(1.0), 0.44),
+                    new GradientStop(Dim(BrandRestOpacity), 0.58),
+                    new GradientStop(Dim(BrandRestOpacity), 1.00),
+                }
+            };
+        }
+
+        /// <summary>Narrow alpha band peaking on the brand front's crest so the glint
+        /// and the wipe arrive together.</summary>
+        private static LinearGradientBrush BuildShineMask(TranslateTransform sweep)
+        {
+            return new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0.5),
+                EndPoint = new Point(1, 0.5),
+                RelativeTransform = sweep,
+                GradientStops =
+                {
+                    new GradientStop(Dim(0.0), 0.00),
+                    new GradientStop(Dim(0.0), 0.36),
+                    new GradientStop(Dim(1.0), 0.44),
+                    new GradientStop(Dim(0.0), 0.52),
+                    new GradientStop(Dim(0.0), 1.00),
+                }
+            };
+        }
+
+        private static Color Dim(double alpha)
+        {
+            return Color.FromArgb((byte)Math.Round(alpha * 255), 0, 0, 0);
+        }
+
         private void BeginClose()
         {
             if (_isClosing)
@@ -393,11 +530,36 @@ namespace RvtMcp.Plugin.Views.Toast
 
         private static double GetAutoDismissSeconds(McpToastViewModel vm)
         {
+            if (vm.AutoDismissSeconds.HasValue)
+                return vm.AutoDismissSeconds.Value;
             if (!vm.Success)
                 return 8;
             if (!string.IsNullOrEmpty(vm.ThumbnailPath))
                 return 9;
             return vm.Kind == ToolActivityKind.Write ? 6 : 3;
         }
+
+        private void MakeNoActivate()
+        {
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero)
+                    return;
+                var exStyle = GetWindowLongPtr(hwnd, GwlExStyle).ToInt64()
+                              | WsExNoActivate | WsExToolWindow;
+                SetWindowLongPtr(hwnd, GwlExStyle, new IntPtr(exStyle));
+            }
+            catch
+            {
+                // Best-effort — toast still works without the style.
+            }
+        }
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+        private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+        private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
     }
 }

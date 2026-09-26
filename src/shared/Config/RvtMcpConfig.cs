@@ -29,13 +29,14 @@ namespace RvtMcp.Plugin
         public const string EnvEnableToast               = "BIMWRIGHT_ENABLE_TOAST";
         public const string EnvPersistSendCodeBodies     = "BIMWRIGHT_PERSIST_SEND_CODE_BODIES";
         public const string EnvPersistSendCodeBodiesTtl  = "BIMWRIGHT_PERSIST_SEND_CODE_BODIES_TTL";
+        public const string EnvUiLanguage                = "BIMWRIGHT_UI_LANGUAGE";
 
         public const bool DefaultReadOnly                  = false;
         public const bool DefaultAllowLanBind              = false;
         public const bool DefaultEnableToolbaker           = true;
         public const bool DefaultEnableAdaptiveBake        = false;
         public const bool DefaultCacheSendCodeBodies       = false;
-        public const bool DefaultEnableToast               = false;
+        public const bool DefaultEnableToast               = true;
         public const bool DefaultPersistSendCodeBodies     = false;
 
         [JsonProperty("target")]
@@ -75,6 +76,13 @@ namespace RvtMcp.Plugin
         [JsonProperty("persistSendCodeBodiesRequiresExplicitEnable")]
         public bool? PersistSendCodeBodiesRequiresExplicitEnable { get; set; }
 
+        /// <summary>
+        /// Plugin UI language override: "auto" or a shipped locale code (en, ja, …).
+        /// Read by the plugin only; the server ignores it.
+        /// </summary>
+        [JsonProperty("uiLanguage")]
+        public string UiLanguage { get; set; }
+
         public bool ReadOnlyOrDefault              => ReadOnly           ?? DefaultReadOnly;
         public bool AllowLanBindOrDefault          => AllowLanBind       ?? DefaultAllowLanBind;
         public bool EnableToolbakerOrDefault       => EnableToolbaker    ?? DefaultEnableToolbaker;
@@ -96,6 +104,9 @@ namespace RvtMcp.Plugin
                 "RvtMcp",
                 "rvtmcp.config.json");
 
+        /// <summary>Test hook: redirects every Load that does not pass an explicit path.</summary>
+        internal static string ConfigFilePathOverride { get; set; }
+
         /// <summary>
         /// Load config from JSON → overlay env vars → overlay CLI args. Pass <c>null</c>
         /// for args to skip the CLI layer (plugin-process callers do this since Revit
@@ -108,7 +119,7 @@ namespace RvtMcp.Plugin
 
         internal static RvtMcpConfig Load(string[] args, string configFilePath, Func<string, string> envLookup)
         {
-            var path = configFilePath ?? DefaultConfigFilePath;
+            var path = configFilePath ?? ConfigFilePathOverride ?? DefaultConfigFilePath;
             var config = LoadFromJsonFile(path)
                          ?? new RvtMcpConfig();
 
@@ -182,6 +193,11 @@ namespace RvtMcp.Plugin
 
             var enableToast = ParseBool(lookup(EnvEnableToast));
             if (enableToast.HasValue) config.EnableToast = enableToast;
+
+            // BIMWRIGHT_UI_LANGUAGE is a Revit.exe process env var (Windows user/machine);
+            // the env block in MCP client configs reaches the server, not the plugin.
+            var uiLanguage = lookup(EnvUiLanguage);
+            if (!string.IsNullOrWhiteSpace(uiLanguage)) config.UiLanguage = uiLanguage.Trim();
 
             var persistEnv = lookup(EnvPersistSendCodeBodies);
             if (!string.IsNullOrWhiteSpace(persistEnv))
@@ -350,21 +366,7 @@ namespace RvtMcp.Plugin
                     Directory.CreateDirectory(dir);
 
                 JObject root;
-                if (File.Exists(path))
-                {
-                    try
-                    {
-                        root = JObject.Parse(File.ReadAllText(path)) ?? new JObject();
-                    }
-                    catch
-                    {
-                        root = new JObject();
-                    }
-                }
-                else
-                {
-                    root = new JObject();
-                }
+                if (!TryReadConfigRoot(path, out root)) return;
 
                 root["enableToast"] = enabled;
                 File.WriteAllText(path, root.ToString(Formatting.Indented));
@@ -372,6 +374,31 @@ namespace RvtMcp.Plugin
             catch
             {
                 // Best-effort — toggle still works in-memory for this session.
+            }
+        }
+
+        /// <summary>
+        /// Persist only <c>uiLanguage</c> into the JSON config file, preserving other keys.
+        /// Used by the ribbon Language combo so the preference survives Revit restarts.
+        /// </summary>
+        public static void SaveUiLanguage(string code, string configFilePath = null)
+        {
+            var path = string.IsNullOrWhiteSpace(configFilePath) ? DefaultConfigFilePath : configFilePath;
+            try
+            {
+                var dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+
+                JObject root;
+                if (!TryReadConfigRoot(path, out root)) return;
+
+                root["uiLanguage"] = code;
+                File.WriteAllText(path, root.ToString(Formatting.Indented));
+            }
+            catch
+            {
+                // Best-effort — language still changes in-memory for this session.
             }
         }
 
@@ -385,21 +412,7 @@ namespace RvtMcp.Plugin
                     Directory.CreateDirectory(dir);
 
                 JObject root;
-                if (File.Exists(path))
-                {
-                    try
-                    {
-                        root = JObject.Parse(File.ReadAllText(path)) ?? new JObject();
-                    }
-                    catch
-                    {
-                        root = new JObject();
-                    }
-                }
-                else
-                {
-                    root = new JObject();
-                }
+                if (!TryReadConfigRoot(path, out root)) return;
 
                 root["persistSendCodeBodies"] = enabled;
                 if (enabled && untilUtc.HasValue)
@@ -431,21 +444,7 @@ namespace RvtMcp.Plugin
                     Directory.CreateDirectory(dir);
 
                 JObject root;
-                if (File.Exists(path))
-                {
-                    try
-                    {
-                        root = JObject.Parse(File.ReadAllText(path)) ?? new JObject();
-                    }
-                    catch
-                    {
-                        root = new JObject();
-                    }
-                }
-                else
-                {
-                    root = new JObject();
-                }
+                if (!TryReadConfigRoot(path, out root)) return;
 
                 root.Remove("persistSendCodeBodies");
                 root.Remove("persistSendCodeBodiesUntil");
@@ -459,6 +458,28 @@ namespace RvtMcp.Plugin
             catch
             {
                 // Best-effort
+            }
+        }
+
+        /// <summary>
+        /// Read the existing config root for a single-key update. Returns false when the
+        /// file exists but cannot be read or parsed — a torn read (e.g. another Revit
+        /// instance mid-write) must never be treated as an empty config, or the write
+        /// would silently drop readOnly and every other setting.
+        /// </summary>
+        private static bool TryReadConfigRoot(string path, out JObject root)
+        {
+            root = new JObject();
+            if (!File.Exists(path)) return true;
+            try
+            {
+                root = JObject.Parse(File.ReadAllText(path)) ?? new JObject();
+                return true;
+            }
+            catch
+            {
+                root = null;
+                return false;
             }
         }
 

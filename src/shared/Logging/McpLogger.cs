@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -10,8 +11,15 @@ namespace RvtMcp.Plugin
         private static string _logPath;
         private static string _sessionId;
         public static string CurrentSessionId => _sessionId;
+        /// <summary>Path of the active mcp-calls.jsonl, or null when logging is disabled.</summary>
+        internal static string CurrentLogPath => _logPath;
         private const int LogVersion = 5;
         private const long MaxFileSize = 5 * 1024 * 1024; // 5MB
+        // Field caps feed both the wire log and the History window's past-session view —
+        // sized so most calls stay fully inspectable after the fact.
+        private const int MaxLoggedParamsLength = 8 * 1024;
+        private const int MaxLoggedResultLength = 10 * 1024;
+        private const int MaxLoggedErrorLength = 4 * 1024;
         internal static string LocalAppDataOverride { get; set; }
 
         public static void Initialize()
@@ -24,7 +32,39 @@ namespace RvtMcp.Plugin
             _sessionId = DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" +
                           Guid.NewGuid().ToString("N").Substring(0, 4);
 
-            RotateIfNeeded(dir);
+            try { WithFileLock(_logPath, () => { RotateIfNeeded(dir); return true; }); }
+            catch { _logPath = null; } // logging failure must not prevent add-in startup
+        }
+
+        /// <summary>
+        /// Serialize file operations across threads, Revit versions and processes.
+        /// Use the same lock for append, rotation and maintenance. Callbacks must be
+        /// synchronous: mutex ownership is thread-affine. Timeout never writes unlocked.
+        /// </summary>
+        internal static T WithFileLock<T>(string path, Func<T> action, int timeoutMilliseconds = 2000)
+        {
+            var fullPath = Path.GetFullPath(path);
+            var windows = Path.DirectorySeparatorChar == '\\';
+            if (windows) fullPath = fullPath.ToUpperInvariant();
+            // Global covers different Windows sessions of the same user sharing
+            // LocalAppData. Hash the full path, not just the filename (test/profile isolation).
+            var name = (windows ? @"Global\" : "") + "RvtMcp.Log." + BakeRedactor.HashBody(fullPath);
+            using (var mutex = new Mutex(false, name))
+            {
+                var acquired = false;
+                try
+                {
+                    try { acquired = mutex.WaitOne(timeoutMilliseconds); }
+                    catch (AbandonedMutexException) { acquired = true; }
+                    if (!acquired)
+                        throw new TimeoutException("Timed out waiting for the MCP log file lock.");
+                    return action();
+                }
+                finally
+                {
+                    if (acquired) mutex.ReleaseMutex();
+                }
+            }
         }
 
         private static void RotateIfNeeded(string dir)
@@ -96,13 +136,17 @@ namespace RvtMcp.Plugin
                     tool = toolName,
                     success,
                     duration_ms = durationMs,
-                    error = RedactAndTruncate(errorMsg, 2048),
+                    error = RedactAndTruncate(errorMsg, MaxLoggedErrorLength),
                     code = safePayload.Code,
                     @params = safePayload.Params,
                     result = BuildLogSafeResult(toolName, resultJson)
                 };
                 var line = JsonConvert.SerializeObject(entry, Formatting.None);
-                File.AppendAllText(_logPath, line + "\n");
+                WithFileLock(_logPath, () =>
+                {
+                    File.AppendAllText(_logPath, line + "\n");
+                    return true;
+                });
             }
             catch { }
         }
@@ -114,7 +158,7 @@ namespace RvtMcp.Plugin
                 return new McpLogSafePayload
                 {
                     Code = null,
-                    Params = ParseParams(RedactAndTruncate(paramsJson, 2048))
+                    Params = ParseParams(RedactAndTruncate(paramsJson, MaxLoggedParamsLength))
                 };
             }
 
@@ -136,7 +180,7 @@ namespace RvtMcp.Plugin
                 return null;
 
             var redactResultFields = string.Equals(toolName, "send_code_to_revit", StringComparison.OrdinalIgnoreCase);
-            return RedactAndTruncate(resultJson, 2048, redactResultFields);
+            return RedactAndTruncate(resultJson, MaxLoggedResultLength, redactResultFields);
         }
 
         internal static string RedactAndTruncate(string value, int maxLength, bool redactResultFields = false)

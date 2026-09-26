@@ -258,7 +258,7 @@ namespace RvtMcp.Tests
             Assert.True(config.EnableToolbakerOrDefault); // default ON per aspect #5
             Assert.False(config.EnableAdaptiveBakeOrDefault);
             Assert.False(config.CacheSendCodeBodiesOrDefault);
-            Assert.False(config.EnableToastOrDefault);
+            Assert.True(config.EnableToastOrDefault);
         }
 
         // --- OrDefault accessors ------------------------------------------
@@ -272,7 +272,7 @@ namespace RvtMcp.Tests
             Assert.True(config.EnableToolbakerOrDefault);
             Assert.False(config.EnableAdaptiveBakeOrDefault);
             Assert.False(config.CacheSendCodeBodiesOrDefault);
-            Assert.False(config.EnableToastOrDefault);
+            Assert.True(config.EnableToastOrDefault);
         }
 
         [Fact]

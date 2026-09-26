@@ -1,5 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -20,10 +22,26 @@ namespace RvtMcp.Plugin
         public string Summary { get; set; }
         public string ToolDescription { get; set; }
         public int? RerunOfIndex { get; set; }
+        /// <summary>ParamsJson exceeded the in-memory cap and was truncated — entry cannot be re-run.</summary>
+        public bool ParamsTruncated { get; set; }
+        /// <summary>Summary cannot be regenerated from stored fields (redacted result,
+        /// or text not produced by SummaryGenerator) — RefreshSummary must keep it.</summary>
+        public bool PreserveSummary { get; set; }
+        /// <summary>Loaded from mcp-calls.jsonl (a previous session) — read-only, never re-runnable.</summary>
+        public bool IsHistorical { get; set; }
+        /// <summary>Short session tag for historical entries (e.g. "0923-1442").</summary>
+        public string SessionTag { get; set; }
+        /// <summary>Grid label: historical rows get a date prefix to separate them from live rows.</summary>
+        public string TimeLabel => IsHistorical
+            ? Timestamp.ToString("MM-dd HH:mm", CultureInfo.InvariantCulture)
+            : Timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
     }
 
     public class McpSessionLog
     {
+        private const int MaxParamsJsonLength = 64 * 1024;
+        private const int MaxCodeSnippetLength = 128 * 1024;
+        private const int MaxEntries = 1000;
         private int _nextIndex = 1;
         internal static Func<RvtMcpConfig> ConfigLoader = () => RvtMcpConfig.Load();
 
@@ -37,32 +55,28 @@ namespace RvtMcp.Plugin
             entry.Index = _nextIndex++;
             if (entry.Timestamp == default)
                 entry.Timestamp = DateTime.Now;
+            // Historical rows are pinned, view-only, and have a separate loader cap.
+            // Loading them must not evict live rows or make the next Add discard history.
+            if (!entry.IsHistorical)
+                while (Count >= MaxEntries)
+                    Entries.Remove(Entries.First(e => !e.IsHistorical));
             Entries.Add(entry);
             EntryAdded?.Invoke(entry);
         }
 
-        // Legacy overload — kept for backward compatibility until all callers migrate
-        public void Add(string toolName, string paramsJson, bool success,
-                        long durationMs, string errorMsg = null, string codeSnippet = null)
-        {
-            Add(new McpCallEntry
-            {
-                ToolName = toolName,
-                ParamsJson = paramsJson,
-                Success = success,
-                DurationMs = durationMs,
-                ErrorMessage = errorMsg,
-                CodeSnippet = codeSnippet
-            });
-        }
-
         public void Clear()
         {
-            Entries.Clear();
+            // "Clear Session" drops live rows only — historical rows loaded from
+            // the file log are not part of this session and stay visible.
+            for (var i = Entries.Count - 1; i >= 0; i--)
+                if (!Entries[i].IsHistorical)
+                    Entries.RemoveAt(i);
             _nextIndex = 1;
         }
 
-        public int Count => Entries.Count;
+        // Entries is also edited directly by the history loader, so derive the live
+        // count instead of maintaining a counter that can drift from the collection.
+        public int Count => Entries.Count(e => !e.IsHistorical);
 
         private static void ApplyPrivacyPolicy(McpCallEntry entry)
         {
@@ -71,17 +85,43 @@ namespace RvtMcp.Plugin
 
             var isSendCode = string.Equals(entry.ToolName, "send_code_to_revit", StringComparison.OrdinalIgnoreCase);
             entry.ErrorMessage = McpResponsePrivacy.RedactErrorForResponse(entry.ErrorMessage);
+            entry.Summary = BakeRedactor.RedactForBake(entry.Summary);
             entry.ResultJson = BakeRedactor.RedactForBake(entry.ResultJson, redactResultFields: isSendCode);
 
             if (!isSendCode)
+            {
+                // Bound in-memory size for fat payloads (e.g. batch_execute); the
+                // file log caps params separately at 2KB.
+                if (entry.ParamsJson != null && entry.ParamsJson.Length > MaxParamsJsonLength)
+                {
+                    entry.ParamsJson = entry.ParamsJson.Substring(0, MaxParamsJsonLength) + "... (truncated)";
+                    entry.ParamsTruncated = true;
+                }
                 return;
+            }
 
             var cacheBodies = false;
             try { cacheBodies = ConfigLoader?.Invoke()?.CacheSendCodeBodiesOrDefault ?? false; }
             catch { }
 
             if (cacheBodies)
+            {
+                // Re-run entries can omit the display copy. Recover it from the
+                // executed params, never from an older (possibly truncated) snippet.
+                if (string.IsNullOrEmpty(entry.CodeSnippet))
+                {
+                    try { entry.CodeSnippet = JObject.Parse(entry.ParamsJson ?? "{}").Value<string>("code"); }
+                    catch { } // malformed/redacted params do not become executable code
+                }
+                // ParamsJson keeps the full body so re-run still works; bound only
+                // the display copy (CodeSnippet feeds the INPUT code view).
+                if (entry.CodeSnippet != null && entry.CodeSnippet.Length > MaxCodeSnippetLength)
+                    entry.CodeSnippet = entry.CodeSnippet.Substring(0, MaxCodeSnippetLength) + "... (truncated)";
+                // ResultJson fields were bake-redacted (<result_N>) while params stay
+                // whole — regenerating would turn "Walls: 42" into a placeholder.
+                entry.PreserveSummary = true;
                 return;
+            }
 
             var code = ExtractCodeBody(entry.ParamsJson, entry.CodeSnippet);
             var codeHash = BakeRedactor.HashBody(code);
@@ -91,7 +131,24 @@ namespace RvtMcp.Plugin
                 code_length = code.Length
             }, Formatting.None);
             entry.CodeSnippet = null;
-            entry.Summary = $"send_code_to_revit body redacted; code_hash={codeHash}; code_length={code.Length}";
+            // Recompute through the single summary path — the redacted params
+            // carry code_hash, so Generate emits the locked security note.
+            entry.Summary = SummaryGenerator.Generate(
+                entry.ToolName, entry.ParamsJson, entry.ResultJson, entry.Success, entry.ErrorMessage);
+        }
+
+        /// <summary>
+        /// Recompute Summary in the current language (L.Changed). Truncated params
+        /// can't be reparsed — keep the stored summary. Output goes through the
+        /// same bake-redaction as Add so recovered text can't leak paths/secrets.
+        /// </summary>
+        internal static void RefreshSummary(McpCallEntry entry)
+        {
+            if (entry == null || entry.ParamsTruncated || entry.PreserveSummary)
+                return;
+            var summary = SummaryGenerator.Generate(
+                entry.ToolName, entry.ParamsJson, entry.ResultJson, entry.Success, entry.ErrorMessage);
+            entry.Summary = BakeRedactor.RedactForBake(summary);
         }
 
         private static string ExtractCodeBody(string paramsJson, string codeSnippet)
