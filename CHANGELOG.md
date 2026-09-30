@@ -27,6 +27,12 @@ Install only the [latest GitHub Release](https://github.com/bimwright/rvt-mcp/re
 
 - **`revit_open_model`** (`meta` toolset) — opens a `.rvt`, `.rte` or `.rfa` and makes it active, or opens it in the background; can detach a workshared model, audit it, and pick a workset configuration. A model Revit already has open is reported back instead of reopened, and `saved_in_version` shows when an older file is being upgraded in memory.
 - Tool counts: default **41**, `--toolsets all` **230**, adaptive bake **233**.
+- **`send_code` runs a snippet in an add-in's freshest build** — list the add-in's live-reload entry (`<namespace>.<Class>.<Method>`, a static method taking a DLL file name and returning its current `Assembly`) under `liveEntries` in `rvtmcp.config.json`. Before each snippet the entry the add-in loaded at startup is asked for the current build; the snippet compiles against it and binds to the very instances the add-in staged, so it can write the add-in's types directly and share them with windows opened from that build. Revit 2024 loads the snippet with `Assembly.LoadFile` (from `%TEMP%\RvtMcp\snippets\<pid>\`) and binds it through an `AssemblyResolve` handler placed first — `Assembly.Load(byte[])` reuses the load context's cached bind and would keep the first build it saw; Revit 2025+ binds through a load context per snippet. The file is re-read on every call.
+- **`live` beside `result`** in `send_code`'s answer when the snippet used an entry's assemblies: `entry`, `source` (`stage` | `startup`), `directory`, `builtAt`. Snippets that touch no such assembly keep the old shape.
+
+### Changed
+
+- **`send_code` refuses instead of silently running an old build** — a snippet using an add-in whose live entry cannot be reached (class not loaded, method missing, it threw, it returned null) fails naming the entry and the reason, unless another entry with the same namespace prefix was reached. A snippet that loads such an add-in's DLL by hand, or picks it out of `AppDomain.GetAssemblies()`, is refused with the way to write it; `mcp:allow-stale-assembly` in a comment lets it run.
 
 ### Fixed
 

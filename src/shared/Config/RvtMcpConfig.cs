@@ -83,6 +83,21 @@ namespace RvtMcp.Plugin
         [JsonProperty("uiLanguage")]
         public string UiLanguage { get; set; }
 
+        /// <summary>
+        /// Add-in live entries (<c>&lt;namespace&gt;.&lt;Class&gt;.&lt;Method&gt;</c>) send_code binds snippets through.
+        /// Written by a repo's tooling (spex revit.ps1), so it may change while Revit is open - read it with
+        /// <see cref="LiveEntriesFromFile"/> on every call, not from the startup snapshot.
+        /// </summary>
+        [JsonProperty("liveEntries")]
+        public List<string> LiveEntries { get; set; }
+
+        public static List<string> LiveEntriesFromFile(string configFilePath = null)
+        {
+            var path = configFilePath ?? ConfigFilePathOverride ?? DefaultConfigFilePath;
+            var config = LoadFromJsonFile(path);
+            return config?.LiveEntries ?? new List<string>();
+        }
+
         public bool ReadOnlyOrDefault              => ReadOnly           ?? DefaultReadOnly;
         public bool AllowLanBindOrDefault          => AllowLanBind       ?? DefaultAllowLanBind;
         public bool EnableToolbakerOrDefault       => EnableToolbaker    ?? DefaultEnableToolbaker;

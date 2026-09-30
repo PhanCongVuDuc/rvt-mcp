@@ -15,6 +15,13 @@ namespace RvtMcp.Plugin
             if (statements.Length == 0 && root.Members.Count != 0) return code;
 
             var body = string.Concat(statements.Select(s => s.ToFullString()));
+
+            // An add-in assembly asked for by name, through that add-in's own live reload when it has one. Reaching into
+            // AppDomain instead hands back the build Revit opened with, which is why SendCodeStaleAssemblyGuard refuses it.
+            // A snippet declaring its own 'live' predates the helper and keeps it: injecting ours would not compile.
+            var liveHelper = "        var live = new System.Func<string, System.Reflection.Assembly>(RvtMcp.Plugin.LiveAssembly.Of);\n";
+            if (DeclaresLive(statements)) liveHelper = "";
+
             var wrapper = SyntaxFactory.ParseMemberDeclaration(@"
 public class McpDynamicScript
 {
@@ -22,7 +29,7 @@ public class McpDynamicScript
     {
         var uidoc = app.ActiveUIDocument;
         var doc = uidoc?.Document;
-" + body + @"
+" + liveHelper + body + @"
     }
 }");
             // Keep helper types outside Run; even a type between statements is valid input.
@@ -34,6 +41,14 @@ public class McpDynamicScript
                     root = root.AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.ParseName(name)));
             }
             return root.NormalizeWhitespace().ToFullString();
+        }
+
+        /// <summary>An identifier token that is not a name reference is a declaration: a local, a loop or catch variable, a parameter.</summary>
+        private static bool DeclaresLive(GlobalStatementSyntax[] statements)
+        {
+            return statements
+                .SelectMany(s => s.DescendantTokens())
+                .Any(t => t.IsKind(SyntaxKind.IdentifierToken) && t.ValueText == "live" && !(t.Parent is IdentifierNameSyntax));
         }
     }
 }

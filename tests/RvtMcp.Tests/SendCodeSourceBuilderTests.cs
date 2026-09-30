@@ -44,6 +44,17 @@ public class Helper { public int Value => 14; }";
             Assert.Equal(true, CompileAndRun(SendCodeSourceBuilder.Build("return doc == null && uidoc == null;"), NoDocumentApi));
         }
 
+        [Theory]
+        [InlineData("var live = 14;\nreturn live;")]
+        [InlineData("foreach (var live in new[] { 14 }) return live;\nreturn 0;")]
+        [InlineData("return new[] { 14 }.Select(live => live).First();")]
+        public void Build_BodyDeclaresItsOwnLive_RunsAsBefore(string code)
+        {
+            var ran = CompileAndRun(SendCodeSourceBuilder.Build(code));
+
+            Assert.True(Equals(ran, 14), "a snippet naming its own 'live' ran before the live helper existed and must still run (FR-007), got " + ran);
+        }
+
         [Fact]
         public void PreservesCompilerErrorsForInvalidBody()
         {
@@ -51,14 +62,18 @@ public class Helper { public int Value => 14; }";
                 d => d.Id == "CS0103");
         }
 
-        // Only stand in for UIApplication/Document; use the real Roslyn compiler and entrypoint.
-        private const string OpenDocumentApi = @"namespace Autodesk.Revit.DB { public class Document {} }
+        // Only stand in for UIApplication/Document and the plugin's live helper, which the wrapper names and
+        // Revit always has loaded; use the real Roslyn compiler and entrypoint.
+        private const string PluginApi = @"
+namespace RvtMcp.Plugin { public static class LiveAssembly { public static System.Reflection.Assembly Of(string f) { return null; } } }";
+
+        private const string OpenDocumentApi = PluginApi + @"namespace Autodesk.Revit.DB { public class Document {} }
 namespace Autodesk.Revit.UI {
  public class UIApplication { public UIDocument ActiveUIDocument { get; } = new UIDocument(); }
  public class UIDocument { public Autodesk.Revit.DB.Document Document { get; } = new Autodesk.Revit.DB.Document(); }
 }";
 
-        private const string NoDocumentApi = @"namespace Autodesk.Revit.DB { public class Document {} }
+        private const string NoDocumentApi = PluginApi + @"namespace Autodesk.Revit.DB { public class Document {} }
 namespace Autodesk.Revit.UI {
  public class UIApplication { public UIDocument ActiveUIDocument { get; } = null; }
  public class UIDocument { public Autodesk.Revit.DB.Document Document { get; } = new Autodesk.Revit.DB.Document(); }
