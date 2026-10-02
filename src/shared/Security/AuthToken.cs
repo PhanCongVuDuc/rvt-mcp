@@ -23,7 +23,8 @@ namespace RvtMcp.Plugin
             var year = RevitVersion ?? "2022";
             var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
             var json = BuildDiscoveryJson(year, transport: "tcp", port: port, pipeName: null, authToken: _token, pid: pid);
-            WriteDiscoveryFile(DiscoveryFileName(year), json);
+            WriteDiscoveryFile(DiscoveryFiles.YearFileName(year), json);
+            WriteDiscoveryFile(DiscoveryFiles.PidFileName(year, pid), json);
         }
 
         public static void GenerateAndPersistPipe(string pipeName)
@@ -32,11 +33,12 @@ namespace RvtMcp.Plugin
             var year = RevitVersion ?? "2027";
             var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
             var json = BuildDiscoveryJson(year, transport: "pipe", port: null, pipeName: pipeName, authToken: _token, pid: pid);
-            WriteDiscoveryFile(DiscoveryFileName(year), json);
+            WriteDiscoveryFile(DiscoveryFiles.YearFileName(year), json);
+            WriteDiscoveryFile(DiscoveryFiles.PidFileName(year, pid), json);
         }
 
         /// <summary>
-        /// Deletes this plugin's discovery file on a clean shutdown so the MCP server
+        /// Deletes this plugin's discovery files on a clean shutdown so the MCP server
         /// doesn't waste a connect attempt on a dead plugin.
         /// </summary>
         public static void DeleteDiscoveryFile()
@@ -44,9 +46,7 @@ namespace RvtMcp.Plugin
             if (string.IsNullOrEmpty(RevitVersion)) return;
             try
             {
-                var dir = DiscoveryDir();
-                var filePath = Path.Combine(dir, DiscoveryFileName(RevitVersion));
-                if (File.Exists(filePath)) File.Delete(filePath);
+                DiscoveryFiles.DeleteOwn(DiscoveryDir(), RevitVersion, System.Diagnostics.Process.GetCurrentProcess().Id);
             }
             catch { /* best-effort on shutdown path */ }
         }
@@ -68,11 +68,6 @@ namespace RvtMcp.Plugin
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "RvtMcp");
-        }
-
-        public static string DiscoveryFileName(string year)
-        {
-            return "revit-" + year + ".json";
         }
 
         private static string GenerateToken()
