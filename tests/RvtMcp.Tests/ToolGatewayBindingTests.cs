@@ -714,6 +714,25 @@ namespace RvtMcp.Tests
             Assert.Equal(new[] { "get_current_view_info" }, hostA.Commands);
         }
 
+        [Fact]
+        public async Task Switch_with_year_and_pid_binds_that_pid_not_the_latest_of_the_year()
+        {
+            using var hostA = new FakeTcpHost();
+            using var hostB = new FakeTcpHost();
+            _probe.Set(PidA, ProcessState.Running, StartA, "Revit A");
+            _probe.Set(PidB, ProcessState.Running, StartB, "Revit B");
+            WritePerInstanceDescriptor(PidA, 2024, StartA, "tcp", hostA.Port, null, "tok-a");
+            WritePerInstanceDescriptor(PidB, 2024, StartB, "tcp", hostB.Port, null, "tok-b");
+
+            var ctx = BeginCall();
+            string text;
+            try { text = await MetaTools.SwitchTarget("2024", verify: false, pid: PidA); }
+            finally { TargetCallContext.End(ctx); }
+
+            Assert.True(JObject.Parse(text).Value<bool>("ok"), text);
+            Assert.Equal(PidA, RevitTargetBinding.Snapshot().Record.Pid);
+        }
+
         // ---- write-path contention (§6.6) ----
 
         [Fact]

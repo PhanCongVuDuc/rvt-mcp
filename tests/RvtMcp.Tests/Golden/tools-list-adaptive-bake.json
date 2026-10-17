@@ -7568,9 +7568,13 @@
     },
     {
       "name": "revit_switch_target",
-      "description_hash": "sha256:d6a24a4c4c0317586121753c036027eed5f2b8de581de30df0afebcaca9478b8",
+      "description_hash": "sha256:211f9c22e41fb12e67980f0847607c697c79fd97c575283b654f8fbb91321b58",
       "inputSchema": {
         "properties": {
+          "pid": {
+            "description": "",
+            "type": "Nullable`1"
+          },
           "verify": {
             "description": "",
             "type": "Boolean"

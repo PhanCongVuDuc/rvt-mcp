@@ -2461,6 +2461,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             "Switch the active Revit binding to a specific instance when multiple Revits are running — including several instances of the same year. " +
             "version: a selector — 'auto', a 4-digit calendar year, 'pid:<n>', or 'id:revit-<year>-<pid>'. " +
             "When several instances share a year, ALWAYS pin with pid:<n> after listing. " +
+            "pid: optional; when given it wins over version (same as version='pid:<n>') - kept for callers that pass (version, pid). " +
             "DO NOT pass R-codes like 'R22' or 'R24' — they are rejected with an educational error. " +
             "DO NOT guess. ALWAYS call revit_list_available_targets first to see which instances are actually running (pid, window_title). " +
             "A valid switch after TARGET_CHANGED confirms the proposed replacement — calls keep failing until you confirm. " +
@@ -2468,10 +2469,11 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             "Returns: {ok, previous: {target_id, pid}|null, binding: {…}, verified, activeView} plus legacy previousTarget/newTarget strings. " +
             "verify=true (default): immediately attempts get_current_view_info against the new target to confirm connectivity; " +
             "set verify=false to skip when the new target's document isn't in a view yet (e.g., Revit just launched).")]
-        public static async Task<string> SwitchTarget(string version, bool verify = true)
+        public static async Task<string> SwitchTarget(string version, bool verify = true, int? pid = null)
         {
             try
             {
+                if (pid.HasValue) version = "pid:" + pid.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 var snapBefore = RevitTargetBinding.Snapshot();
 
                 // Parse the selector first — an invalid one changes nothing (§6.8).
