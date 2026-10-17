@@ -9,6 +9,7 @@ namespace RvtMcp.Tests
     [Collection("L10n")]
     public class ToastContentBuilderTests : IDisposable
     {
+        private readonly string _root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rvt-toast-test-" + Guid.NewGuid().ToString("N"));
         public ToastContentBuilderTests()
         {
             L.ResetForTests();
@@ -16,7 +17,11 @@ namespace RvtMcp.Tests
             L.InitializeForTests(StringTable.Build("en", en, null, null));
         }
 
-        public void Dispose() => L.ResetForTests();
+        public void Dispose()
+        {
+            L.ResetForTests();
+            if (System.IO.Directory.Exists(_root)) System.IO.Directory.Delete(_root, true);
+        }
 
         [Fact]
         public void BuildCompleted_get_current_view_info_includes_view_name()
@@ -58,9 +63,7 @@ namespace RvtMcp.Tests
         [Fact]
         public void BuildCompleted_capture_view_image_sets_thumbnail_path()
         {
-            var capturesDir = System.IO.Path.Combine(
-                System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
-                "RvtMcp", "captures");
+            var capturesDir = System.IO.Path.Combine(_root, "captures");
             System.IO.Directory.CreateDirectory(capturesDir);
             var path = System.IO.Path.Combine(capturesDir, "toast-test-thumb.png");
             System.IO.File.WriteAllBytes(path, new byte[] { 0x89, 0x50, 0x4E, 0x47 });
@@ -80,8 +83,7 @@ namespace RvtMcp.Tests
                 Assert.Equal("MCP · Snapshot", vm.CategoryLabel);
                 Assert.Contains("toast-test-thumb.png", vm.Summary);
                 Assert.Contains("800px PNG", vm.Summary);
-                if (vm.ThumbnailPath != null)
-                    Assert.Contains("Click to open", vm.Detail);
+                Assert.DoesNotContain("Click to open", vm.Detail);
                 Assert.Equal(path, vm.ThumbnailPath);
             }
             finally
@@ -177,15 +179,14 @@ namespace RvtMcp.Tests
         [Fact]
         public void IsSafeImagePath_rejects_sibling_of_captures_directory()
         {
-            var localAppData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
-            var siblingDir = System.IO.Path.Combine(localAppData, "RvtMcp", "capturesEvil");
+            var siblingDir = System.IO.Path.Combine(_root, "capturesEvil");
             System.IO.Directory.CreateDirectory(siblingDir);
             var path = System.IO.Path.Combine(siblingDir, "evil.png");
             System.IO.File.WriteAllBytes(path, new byte[] { 0x89, 0x50, 0x4E, 0x47 });
 
             try
             {
-                Assert.False(ToastContentBuilder.IsSafeImagePath(path));
+                Assert.False(ToastContentBuilder.IsSafeImagePath(path, System.IO.Path.Combine(_root, "temp"), System.IO.Path.Combine(_root, "captures")));
             }
             finally
             {
@@ -210,6 +211,86 @@ namespace RvtMcp.Tests
 
             Assert.Equal("MCP · Script", vm.CategoryLabel);
             Assert.Equal("Hello from script", vm.Summary);
+        }
+
+        [Theory]
+        [InlineData("{\"result\":{\"marker\":\"probe\"}}", "Fields: 1")]
+        [InlineData("{\"result\":{\"items\":[1,null,true]}}", "Fields: 1")]
+        [InlineData("{\"result\":[1,2]}", "Items: 2")]
+        [InlineData("{\"result\":[{\"name\":\"Cột\"},null]}", "Items: 2")]
+        [InlineData("{\"result\":{}}", "Fields: 0")]
+        [InlineData("{\"result\":[]}", "Items: 0")]
+        [InlineData("{\"result\":42}", "42")]
+        [InlineData("{\"result\":true}", "True")]
+        [InlineData("{\"result\":null}", "Script finished")]
+        [InlineData("{}", "Script finished")]
+        [InlineData("{\"result\":\"\"}", "Script finished")]
+        public void BuildCompleted_send_code_accepts_json_result_shapes(string resultJson, string expectedSummary)
+        {
+            var vm = ToastContentBuilder.BuildCompleted(
+                "send_code_to_revit", null, resultJson, true, null, 10, null);
+
+            Assert.True(vm.Success);
+            Assert.Equal("MCP · Script", vm.CategoryLabel);
+            Assert.Equal(expectedSummary, vm.Summary);
+            Assert.Equal("Custom C# executed in Revit", vm.Detail);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void BuildCompleted_send_code_bounds_structured_result_preview(bool array)
+        {
+            var value = new string('界', 200);
+            var json = array ? "[\"" + value + "\"]" : "{\"text\":\"" + value + "\"}";
+            var vm = ToastContentBuilder.BuildCompleted(
+                "send_code_to_revit", null, "{\"result\":" + json + "}", true, null, 10, null);
+
+            Assert.True(vm.Success);
+            Assert.InRange(vm.Summary.Length, 1, 100);
+            Assert.Equal(array ? "Items: 1" : "Fields: 1", vm.Summary);
+            Assert.DoesNotContain("界", vm.Summary);
+            Assert.DoesNotContain("\n", vm.Summary);
+            Assert.DoesNotContain("\r", vm.Summary);
+        }
+
+        [Theory]
+        [InlineData("{\"complete\":false}")]
+        [InlineData("{\"complete\":true}")]
+        [InlineData("{}")]
+        public void Survey_missing_or_incomplete_coverage_is_explicit_without_claiming_call_failure(string result)
+        {
+            var vm = ToastContentBuilder.BuildCompleted("survey_change_impact", null, result, true, null, 100, null);
+            Assert.True(vm.Success);
+            Assert.Equal("Survey: coverage incomplete", vm.Summary);
+            Assert.Contains("blind spots", vm.Detail);
+        }
+
+        [Fact]
+        public void Survey_complete_supported_checks_still_requires_review()
+        {
+            var relations = new Newtonsoft.Json.Linq.JArray();
+            for (var i = 0; i < 10; i++) relations.Add(new Newtonsoft.Json.Linq.JObject { ["coverage"] = "complete" });
+            var result = new Newtonsoft.Json.Linq.JObject { ["complete"] = true, ["relations"] = relations };
+            var vm = ToastContentBuilder.BuildCompleted("survey_change_impact", null, result.ToString(), true, null, 100, null);
+            Assert.Equal("Survey: supported checks complete", vm.Summary);
+            Assert.Contains("before changes", vm.Detail);
+            relations[4]["coverage"] = "partial";
+            vm = ToastContentBuilder.BuildCompleted("survey_change_impact", null, result.ToString(), true, null, 100, null);
+            Assert.Equal("Survey: coverage incomplete", vm.Summary);
+        }
+
+        [Fact]
+        public void Display_redacts_before_truncation_and_does_not_reinterpret_script_values_as_outcomes()
+        {
+            var error = "password=\"" + new string('x', 160) + " private\"; C:\\private\\project.rvt";
+            var vm = ToastContentBuilder.BuildCompleted("query", null, null, false, error, 100, null);
+            Assert.DoesNotContain("private", vm.Summary);
+            Assert.Contains("<redacted>", vm.Summary);
+            Assert.False(vm.Success);
+            vm = ToastContentBuilder.BuildCompleted("send_code_to_revit", null, "{\"result\":{\"ok\":false}}", true, null, 100, null);
+            Assert.True(vm.Success); // arbitrary returned data is not an execution envelope
+            Assert.Equal("Fields: 1", vm.Summary);
         }
 
         [Fact]

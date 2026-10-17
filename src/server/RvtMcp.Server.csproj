@@ -15,7 +15,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>rvt-mcp</ToolCommandName>
     <PackageId>RvtMcp.Server</PackageId>
-    <Version>0.6.3</Version>
+    <Version>1.1.0</Version>
     <Authors>Khoa Le</Authors>
     <Description>MCP gateway for Autodesk Revit 2022-2027 — expose the Revit API as AI-callable tools with progressive disclosure (toolset gating), a Transaction-safe batch_execute, and a ToolBaker self-evolution engine. Pair with the Revit plugin distributed on GitHub Releases.</Description>
     <PackageProjectUrl>https://github.com/bimwright/rvt-mcp</PackageProjectUrl>
@@ -34,12 +34,40 @@
   <!-- Shared config (A9) — pulled in as source so server binary has zero extra deps -->
   <ItemGroup>
     <Compile Include="..\shared\Config\RvtMcpConfig.cs" Link="Shared\RvtMcpConfig.cs" />
+    <Compile Include="..\shared\Config\ToastPositionOptions.cs" Link="Shared\ToastPositionOptions.cs" />
     <Compile Include="..\shared\Logging\PersistSendCodeTtl.cs" Link="Shared\PersistSendCodeTtl.cs" />
     <Compile Include="..\shared\Security\BakeRedactor.cs" Link="Shared\BakeRedactor.cs" />
     <Compile Include="..\shared\Security\SecretMasker.cs" Link="Shared\SecretMasker.cs" />
     <Compile Include="..\shared\ToolBaker\BakedToolRecord.cs" Link="Shared\BakedToolRecord.cs" />
     <Compile Include="..\shared\ToolBaker\BakedToolRuntimeSource.cs" Link="Shared\BakedToolRuntimeSource.cs" />
     <Compile Include="..\shared\Infrastructure\LegacyDataMigration.cs" Link="Shared\LegacyDataMigration.cs" />
+    <Compile Include="..\shared\Infrastructure\ToolReadPolicy.cs" Link="Shared\ToolReadPolicy.cs" />
+    <Compile Include="..\shared\Survey\SurveyContract.cs" Link="Shared\SurveyContract.cs" />
+    <Compile Include="..\shared\Survey\SurveySnapshotCache.cs" Link="Shared\SurveySnapshotCache.cs" />
+    <Compile Include="..\shared\Infrastructure\ResponseSizeGuard.cs" Link="Shared\ResponseSizeGuard.cs" />
+    <Compile Include="..\shared\Infrastructure\ResponseSizePolicyCatalog.cs" Link="Shared\ResponseSizePolicyCatalog.cs" />
+    <Compile Include="..\shared\Infrastructure\MutationResponseCompactor.cs" Link="Shared\MutationResponseCompactor.cs" />
+    <Compile Include="..\shared\Infrastructure\ResponseSpillWriter.cs" Link="Shared\ResponseSpillWriter.cs" />
+    <Compile Include="..\shared\Infrastructure\ResponseSpillPolicy.cs" Link="Shared\ResponseSpillPolicy.cs" />
+    <Compile Include="..\shared\Infrastructure\ResponseSpillProcessor.cs" Link="Shared\ResponseSpillProcessor.cs" />
+    <Compile Include="..\shared\Infrastructure\ResponseEnvelopeGuard.cs" Link="Shared\ResponseEnvelopeGuard.cs" />
+    <Compile Include="..\shared\Infrastructure\DocumentChangeAccumulator.cs" Link="Shared\DocumentChangeAccumulator.cs" />
+    <Compile Include="..\shared\Infrastructure\ChangeSummary.cs" Link="Shared\ChangeSummary.cs" />
+    <Compile Include="..\shared\Infrastructure\ChangeHistoryTransfer.cs" Link="Shared\ChangeHistoryTransfer.cs" />
+    <Compile Include="..\shared\Infrastructure\HistoryDiagnostics.cs" Link="Shared\HistoryDiagnostics.cs" />
+    <Compile Include="..\shared\Infrastructure\HistoryFileIdentity.cs" Link="Shared\HistoryFileIdentity.cs" />
+    <Compile Include="..\shared\Views\Toast\ToolActivityClassifier.cs" Link="Shared\ToolActivityClassifier.cs" />
+    <Compile Include="..\shared\Security\McpResponsePrivacy.cs" Link="Shared\McpResponsePrivacy.cs" />
+    <Compile Include="..\shared\Security\ErrorSanitizer.cs" Link="Shared\ErrorSanitizer.cs" />
+    <Compile Include="..\shared\ToolCatalog\ToolCatalogModels.cs" Link="Shared\ToolCatalogModels.cs" />
+    <Compile Include="..\shared\Update\UpdateCheck.cs" Link="Shared\UpdateCheck.cs" />
+  </ItemGroup>
+
+  <!-- Prompt bodies (D1): embedded markdown, stable LogicalName like the localization catalogs -->
+  <ItemGroup>
+    <EmbeddedResource Include="Prompts\*.md">
+      <LogicalName>RvtMcp.Prompts.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- Expose internal helpers (ParseCsv, ApplyCliArgs, ApplyEnvVars, Load overloads, etc.)

@@ -9,7 +9,8 @@ param(
     [Parameter(Mandatory=$true)][string]$OldPackage,
     [Parameter(Mandatory=$true)][string]$NewPackage,
     [Parameter(Mandatory=$true)][string]$Sandbox,
-    [Parameter(Mandatory=$true)][string]$ResultPath
+    [Parameter(Mandatory=$true)][string]$ResultPath,
+    [ValidateSet('Legacy','Current')][string]$OldLayout = 'Legacy'
 )
 $ErrorActionPreference='Stop'
 $OldPackage=(Resolve-Path -LiteralPath $OldPackage).Path
@@ -47,10 +48,18 @@ function Get-Process { param($Name,$ErrorAction) } # Isolated host has no Revit 
 try {
 $oldManifest=Get-Content (Join-Path $OldPackage 'manifest.json') -Raw | ConvertFrom-Json
 Assert-SetupManifest -Root $OldPackage -Manifest $oldManifest
-# Releases up to 0.6.2 installed the server into a versioned folder.
-$oldServer=Join-Path $Sandbox "server/$($oldManifest.version)"
+# Seed the pre-migration layout, including a retained version and the current
+# server used by recent releases. All files are inside the sandbox profile.
+$oldRoot=if ($OldLayout -eq 'Legacy') { Join-Path $sandboxLocalAppData 'RvtMcp' } else { Join-Path $sandboxLocalAppData 'Bimwright/rvt-mcp' }
+$oldServerFolder=if ($OldLayout -eq 'Legacy') { 'rvt/server' } else { 'server' }
+$oldServer=Join-Path $oldRoot "$oldServerFolder/$($oldManifest.version)"
 New-Item -ItemType Directory -Path (Split-Path -Parent $oldServer) | Out-Null
 Copy-Item -LiteralPath (Join-Path $OldPackage 'server') -Destination $oldServer -Recurse
+Copy-Item -LiteralPath (Join-Path $OldPackage 'server') -Destination (Join-Path $oldRoot "$oldServerFolder/current") -Recurse
+Set-Content -LiteralPath (Join-Path $oldRoot 'rvtmcp.config.json') '{"toolsets":["query"],"custom":true}'
+[IO.File]::WriteAllBytes((Join-Path $oldRoot 'bake.db'), [byte[]](0, 1, 128, 255))
+$configHash=(Get-FileHash -LiteralPath (Join-Path $oldRoot 'rvtmcp.config.json')).Hash
+$bakeHash=(Get-FileHash -LiteralPath (Join-Path $oldRoot 'bake.db')).Hash
 foreach ($year in 2022..2027) {
     $root=Get-AddinsRoot $year
     Expand-Archive -LiteralPath (Join-Path $OldPackage "plugins/RvtMcp.Plugin.R$($year-2000).zip") -DestinationPath "$root/RvtMcp"
@@ -61,7 +70,8 @@ $oldServerHash=(Get-FileHash (Join-Path $oldServer 'rvt-mcp.exe')).Hash
 $SourceDir=$NewPackage; $pluginSourceDir=Join-Path $NewPackage 'plugins'; $serverSourceDir=Join-Path $NewPackage 'server'
 $manifest=Get-Content (Join-Path $NewPackage 'manifest.json') -Raw | ConvertFrom-Json
 $setupVersion=[string]$manifest.version
-$ServerInstallRoot=Join-Path $Sandbox 'server\current'
+$newRoot=Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp'
+$ServerInstallRoot=Join-Path $newRoot 'server\current'
 $Years=@(2022..2027); $Client='none'; $Uninstall=$false; $WireClient=$null
 & $main
 
@@ -78,11 +88,15 @@ foreach ($year in $Years) {
     }
     $pluginResults += @{year=$year;filesVerified=$files.Count;passed=$true}
 }
-if ((Get-FileHash (Join-Path $oldServer 'rvt-mcp.exe')).Hash -ne $oldServerHash) { throw 'Legacy server version changed' }
+$relocatedServer=Join-Path $newRoot "server/$($oldManifest.version)/rvt-mcp.exe"
+if ((Get-FileHash -LiteralPath $relocatedServer).Hash -ne $oldServerHash) { throw 'Legacy server version changed' }
+if ($OldLayout -eq 'Legacy' -and (Test-Path -LiteralPath $oldRoot)) { throw 'Old product root survived relocation' }
+if ((Get-FileHash -LiteralPath (Join-Path $newRoot 'rvtmcp.config.json')).Hash -ne $configHash) { throw 'Custom configuration changed' }
+if ((Get-FileHash -LiteralPath (Join-Path $newRoot 'bake.db')).Hash -ne $bakeHash) { throw 'Personal data changed' }
 if ((Get-FileHash (Join-Path $ServerInstallRoot 'rvt-mcp.exe')).Hash -ne (Get-FileHash (Join-Path $NewPackage 'server/rvt-mcp.exe')).Hash) { throw 'New server mismatch' }
 $report=[ordered]@{testedAtUtc=(Get-Date).ToUniversalTime().ToString('o');fromVersion=$oldManifest.version;toVersion=$manifest.version;
     installerSha256=(Get-FileHash $installer).Hash;isolation='Real payloads, real installer control flow and real server smoke check (--help); sandbox paths and simulated closed host; no real deployment.';
-    pluginResults=$pluginResults;serverVerified=$true;legacyServerKept=$true;smokeCheck='passed';passed=$true}
+    oldLayout=$OldLayout;pluginResults=$pluginResults;serverVerified=$true;legacyServerKept=$true;dataRootRelocated=($OldLayout -eq 'Legacy');customConfigPreserved=$true;personalDataPreserved=$true;smokeCheck='passed';passed=$true}
 $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
 $report | ConvertTo-Json -Depth 10
 } finally {

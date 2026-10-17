@@ -83,16 +83,67 @@ function New-SetupFixture([string]$Parent = $testRoot) {
 }
 function Invoke-FixtureSetup {
     [CmdletBinding(SupportsShouldProcess=$true)]
-    param($Fixture, [string]$Client='none', [switch]$PruneOldServers, [switch]$Uninstall, [int[]]$Years=@(2026,2027))
+    param($Fixture, [string[]]$Client=@(), [string]$WireClient, [switch]$PruneOldServers, [switch]$Uninstall, [int[]]$Years=@(2026,2027), [string]$ServerInstallRoot)
     # Only OS boundaries are redirected. Main control flow, ZIP extraction,
     # directory replacement and rollback are production code.
     function Get-AddinsRoot([int]$year) { Join-Path $Fixture.Root "addins/$year" }
     function Get-MachineAddinsRoot([int]$year) { Join-Path $Fixture.Root "machine/$year" }
-    function Get-Process { param($Name, $ErrorAction) if ($Fixture.Running) { [pscustomobject]@{Name='Revit';Id=1234} } }
+    function Get-Process { param($Name, $ErrorAction)
+        if ($Name -eq 'claude' -and $Fixture.PSObject.Properties['ClaudeRunning'] -and $Fixture.ClaudeRunning) {
+            return [pscustomobject]@{Name='claude';Id=99;Path='C:\Program Files\WindowsApps\Claude_9.9_x64__testpfn\app\claude.exe'}
+        }
+        if ($Fixture.Running) { [pscustomobject]@{Name='Revit';Id=1234} }
+    }
     function Test-ServerExecutable { param([string]$Path, [int]$TimeoutSeconds) if ($Fixture.SmokeFails) { throw 'Server executable could not start (stub). Antivirus or policy may have blocked it.' } }
+    if ($Fixture.PSObject.Properties['VerificationFails'] -and $Fixture.VerificationFails) {
+        function Assert-InstalledPlugin { throw 'Installed plugin verification failed (stub).' }
+    }
+    # Client CLIs never touch the real PATH here: detected only when the
+    # fixture opts in with Add-Member FakeCli $true, then calls are recorded.
+    $Fixture | Add-Member -NotePropertyName CliCalls -NotePropertyValue (New-Object 'System.Collections.Generic.List[string]') -Force
+    function Get-Command { param($Name, $ErrorAction)
+        if ($Name -in @('claude', 'codex', 'grok')) {
+            if ($Fixture.PSObject.Properties['FakeCli'] -and $Fixture.FakeCli) { return [pscustomobject]@{Name=$Name;Source="C:\fake\$Name.exe"} }
+            return
+        }
+        Microsoft.PowerShell.Core\Get-Command @PSBoundParameters
+    }
+    if ($Fixture.PSObject.Properties['FakeCli'] -and $Fixture.FakeCli) {
+        # Optional CliOutput @{ 'mcp add' = '...' } replays the real CLI's text.
+        function claude {
+            $Fixture.CliCalls.Add('claude ' + ($args -join ' '))
+            $key = "$($args[0]) $($args[1])"
+            if ($Fixture.PSObject.Properties['CliOutput'] -and $Fixture.CliOutput.ContainsKey($key)) { $Fixture.CliOutput[$key] }
+            # Optional CliStderr @{ 'mcp remove' = '...' } writes to the error stream like the real CLI's stderr.
+            if ($Fixture.PSObject.Properties['CliStderr'] -and $Fixture.CliStderr.ContainsKey($key)) { Write-Error $Fixture.CliStderr[$key] }
+        }
+        function codex { $Fixture.CliCalls.Add('codex ' + ($args -join ' ')) }
+        function grok { $Fixture.CliCalls.Add('grok ' + ($args -join ' ')) }
+    }
     $SourceDir=$Fixture.Source; $pluginSourceDir=Join-Path $SourceDir 'plugins'; $serverSourceDir=Join-Path $SourceDir 'server'
-    $ServerInstallRoot=Join-Path $Fixture.Root 'server\current'; $manifest=$Fixture.Manifest; $WireClient=$null; $setupVersion='0.6.3'
+    if (-not $ServerInstallRoot) { $ServerInstallRoot=Join-Path $Fixture.Root 'server\current' }
+    $manifest=$Fixture.Manifest; $setupVersion='0.6.3'
     & $mainBody
+}
+function New-LegacyRootFixture {
+    # The pre-rename %LOCALAPPDATA%\RvtMcp\ tree: config, ToolBaker data,
+    # locales, and server copies nested as rvt\server\<name>.
+    $old = Join-Path $sandboxLocalAppData 'RvtMcp'
+    New-Item -ItemType Directory -Path "$old/baked/x", "$old/locales", "$old/rvt/server/current", "$old/rvt/server/0.6.2" -Force | Out-Null
+    Set-Content -LiteralPath "$old/rvtmcp.config.json" '{"custom":true}'
+    Set-Content -LiteralPath "$old/baked/x/tool.json" '{}'
+    Set-Content -LiteralPath "$old/locales/strings.vi.json" '{"k":"v"}'
+    [IO.File]::WriteAllBytes((Join-Path $old 'bake.db'), [byte[]](0, 1, 128, 255))
+    [IO.File]::WriteAllBytes((Join-Path $old 'bake.db-wal'), [byte[]](255, 128, 1, 0))
+    Set-Content -LiteralPath "$old/rvt/server/current/rvt-mcp.exe" 'old-server-current'
+    Set-Content -LiteralPath "$old/rvt/server/0.6.2/rvt-mcp.exe" 'old-server-062'
+    return $old
+}
+function Clear-ProductRoots {
+    # The sandbox profile is shared for the whole run; relocation tests must
+    # not inherit each other's roots.
+    Remove-Item -LiteralPath (Join-Path $sandboxLocalAppData 'RvtMcp') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $sandboxLocalAppData 'Bimwright') -Recurse -Force -ErrorAction SilentlyContinue
 }
 function Assert-OldInstall($Fixture) {
     foreach ($year in @(2026,2027)) {
@@ -166,15 +217,16 @@ try {
         Assert (-not (Test-Path -LiteralPath $leftover)) 'Exact leftover was not swept'
         Assert ((Test-Path -LiteralPath "$s/current.backup/rvt-mcp.exe") -and (Test-Path -LiteralPath "$s/0.6.1.rvtmcp-rollback-xyz/rvt-mcp.exe")) 'Sweep touched a non-matching name'
     }
-    Test 'Deprecated -Client warns and still installs; none and default do not warn' {
+    Test 'Deprecated -WireClient warns and merges into -Client; none and default do not warn' {
         $fixture = New-SetupFixture
-        $output = Invoke-FixtureSetup $fixture -Client codex 3>&1 6>&1 | Out-String -Width 4096
-        Assert ($output -match 'no longer edits MCP client configs') 'Deprecation warning missing'
-        Assert ((Get-Content -LiteralPath "$($fixture.Root)/server/current/rvt-mcp.exe" -Raw).Trim() -eq 'new-server') 'Install did not proceed'
+        $fixture | Add-Member -NotePropertyName FakeCli -NotePropertyValue $true
+        $output = Invoke-FixtureSetup $fixture -WireClient claude 3>&1 6>&1 | Out-String -Width 4096
+        Assert ($output -match 'WireClient is deprecated') 'Deprecation warning missing'
+        Assert (@($fixture.CliCalls | Where-Object { $_ -like 'claude mcp add *' }).Count -eq 1) 'WireClient did not merge into -Client'
         foreach ($clientArgs in @(@{Client='none'}, @{})) {
             $f = New-SetupFixture
             $out = Invoke-FixtureSetup $f @clientArgs 3>&1 6>&1 | Out-String -Width 4096
-            Assert (-not ($out -match 'no longer edits')) 'Warned without an explicit client'
+            Assert (-not ($out -match 'deprecated')) 'Warned without an explicit client'
         }
     }
     Test 'Revit running blocks the upgrade before any replacement' {
@@ -364,6 +416,415 @@ try {
         Assert ((Get-Content -LiteralPath $path1 -Raw).Trim() -eq 'old-one') 'Rollback stopped before earlier path'
         Assert (Test-Path -LiteralPath $script:installChanges[1].Backup) 'Failed rollback deleted its recovery backup'
         $script:installChanges=$null
+    }
+    Test 'Install seeds toolsets=all config and keeps an explicit toolsets choice' {
+        $cfgPath = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp\rvtmcp.config.json'
+        Remove-Item -LiteralPath $cfgPath -Force -ErrorAction SilentlyContinue
+        $fixture = New-SetupFixture
+        $output = Invoke-FixtureSetup $fixture 3>&1 6>&1 | Out-String -Width 4096
+        Assert (Test-Path -LiteralPath $cfgPath) 'rvtmcp.config.json not seeded'
+        $cfg = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
+        Assert (@($cfg.toolsets) -contains 'all') 'toolsets=all not seeded'
+        Assert ($output -match 'Config\s*:\s*seeded toolsets=all') 'Config seed not reported'
+        # An explicit toolsets choice survives the next install.
+        Set-Content -LiteralPath $cfgPath '{"toolsets":["query","meta"],"enableToast":false}'
+        $output = Invoke-FixtureSetup $fixture 3>&1 6>&1 | Out-String -Width 4096
+        $cfg = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
+        Assert (($cfg.toolsets -join ',') -eq 'query,meta') 'User toolsets clobbered'
+        Assert ($cfg.enableToast -eq $false) 'Other config keys clobbered'
+        Assert ($output -match 'Config\s*:\s*kept existing') 'Kept setting not reported'
+    }
+    Test 'Install merges toolsets=all into a config that lacks the key' {
+        $cfgPath = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp\rvtmcp.config.json'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $cfgPath) -Force | Out-Null
+        Set-Content -LiteralPath $cfgPath '{"enableToast":false}'
+        $fixture = New-SetupFixture
+        Invoke-FixtureSetup $fixture | Out-Null
+        $cfg = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
+        Assert (@($cfg.toolsets) -contains 'all') 'toolsets=all not merged'
+        Assert ($cfg.enableToast -eq $false) 'Existing key clobbered by merge'
+        Assert (@(Get-ChildItem -LiteralPath $fixture.Root -Recurse -Filter '*.rvtmcp-rollback-*').Count -eq 0) 'Transaction backups leaked after success'
+    }
+    Test 'WhatIf reports the seed without writing the config' {
+        $cfgPath = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp\rvtmcp.config.json'
+        Remove-Item -LiteralPath $cfgPath -Force -ErrorAction SilentlyContinue
+        $fixture = New-SetupFixture
+        $output = Invoke-FixtureSetup $fixture -WhatIf 3>&1 6>&1 | Out-String -Width 4096
+        Assert (-not (Test-Path -LiteralPath $cfgPath)) 'WhatIf wrote the config'
+        Assert ($output -match 'preview seed toolsets=all') 'Seed preview missing'
+    }
+    Test 'Client wiring: auto wires present file clients; JSONC comments and siblings survive' {
+        $fixture = New-SetupFixture
+        New-Item -ItemType Directory -Path "$sandboxUserProfile\.cursor", "$sandboxUserProfile\.config\kilo" -Force | Out-Null
+        $cursor = "$sandboxUserProfile\.cursor\mcp.json"
+        Set-Content -LiteralPath $cursor -Value '{ "mcpServers": { "other": { "command": "x" } } }'
+        $kilo = "$sandboxUserProfile\.config\kilo\kilo.jsonc"
+        Set-Content -LiteralPath $kilo -Value "// kilo config`n{`n  /* keep me */`n  `"mcp`": {}`n}"
+        $output = Invoke-FixtureSetup $fixture -Client 'auto' | Out-Null
+        $c = Get-Content -LiteralPath $cursor -Raw | ConvertFrom-Json
+        Assert ($c.mcpServers.'rvt-mcp'.command -match 'server[\\/]+current[\\/]+rvt-mcp\.exe$') 'cursor entry missing or mispointed'
+        Assert ($c.mcpServers.other.command -eq 'x') 'cursor sibling clobbered'
+        Assert (Test-Path -LiteralPath "$cursor.bak") 'cursor backup missing'
+        $kraw = Get-Content -LiteralPath $kilo -Raw
+        Assert ($kraw.Contains('keep me') -and $kraw.Contains('// kilo config')) 'JSONC comments lost'
+        $k = ConvertFrom-JsoncText $kraw
+        Assert ($k.mcp.'rvt-mcp'.command[0] -match 'server[\\/]+current[\\/]+rvt-mcp\.exe$') 'kilo entry missing'
+        Assert ($k.mcp.'rvt-mcp'.type -eq 'local') 'kilo entry shape wrong'
+        # Second run must be idempotent, not a duplicate.
+        $res = Invoke-McpClientWiring -Clients 'cursor' -Exe "$($fixture.Root)\server\current\rvt-mcp.exe" -Mode Add
+        Assert ($res -match 'already') 're-wire not idempotent'
+        Assert (@((ConvertFrom-Json (Get-Content -LiteralPath $cursor -Raw)).mcpServers.PSObject.Properties.Name).Count -eq 2) 'duplicate entry added'
+    }
+    Test 'Client wiring repoints versioned paths and preserves custom launchers' {
+        $fixture = New-SetupFixture
+        $exe = "$($fixture.Root)\server\current\rvt-mcp.exe"
+        New-Item -ItemType Directory -Path "$sandboxUserProfile\.cursor" -Force | Out-Null
+        $cursor = "$sandboxUserProfile\.cursor\mcp.json"
+        # The whole command value is replaced, not just its rvt\server\<ver> tail
+        # (a pre-0.6.3 path carries the same RvtMcp prefix as the new one).
+        $legacy = 'C:\\Users\\Someone\\AppData\\Local\\RvtMcp\\rvt\\server\\0.6.2\\rvt-mcp.exe'
+        Set-Content -LiteralPath $cursor -Value ('{ "mcpServers": { "rvt-mcp": { "command": "' + $legacy + '", "args": ["--read-only"] } } }')
+        $res = Invoke-McpClientWiring -Clients 'cursor' -Exe $exe -Mode Add
+        Assert ($res -match 'repointed') "expected repoint, got: $res"
+        $c = Get-Content -LiteralPath $cursor -Raw | ConvertFrom-Json
+        Assert ($c.mcpServers.'rvt-mcp'.command -eq $exe) "not repointed to exactly $exe, got: $($c.mcpServers.'rvt-mcp'.command)"
+        Assert ($c.mcpServers.'rvt-mcp'.args[0] -eq '--read-only') 'existing args lost'
+        # Same for the array-shaped command of opencode/kilo.
+        New-Item -ItemType Directory -Path "$sandboxUserProfile\.config\kilo" -Force | Out-Null
+        $kilo = "$sandboxUserProfile\.config\kilo\kilo.jsonc"
+        Set-Content -LiteralPath $kilo -Value ('{ "mcp": { "rvt-mcp": { "type": "local", "command": ["' + $legacy + '"], "enabled": true } } }')
+        $res = Invoke-McpClientWiring -Clients 'kilo' -Exe $exe -Mode Add
+        Assert ($res -match 'repointed') "expected kilo repoint, got: $res"
+        $k = Get-Content -LiteralPath $kilo -Raw | ConvertFrom-Json
+        Assert ($k.mcp.'rvt-mcp'.command[0] -eq $exe) "kilo not repointed to exactly $exe, got: $($k.mcp.'rvt-mcp'.command[0])"
+        # The old root's own current\ copy and versioned copies under the new
+        # root repoint too; the new root's current\ is never repointed.
+        foreach ($old in @('C:\\Users\\Someone\\AppData\\Local\\RvtMcp\\rvt\\server\\current\\rvt-mcp.exe',
+                           'C:\\Users\\Someone\\AppData\\Local\\Bimwright\\rvt-mcp\\server\\0.7.0\\rvt-mcp.exe')) {
+            Set-Content -LiteralPath $cursor -Value ('{ "mcpServers": { "rvt-mcp": { "command": "' + $old + '" } } }')
+            $res = Invoke-McpClientWiring -Clients 'cursor' -Exe $exe -Mode Add
+            Assert ($res -match 'repointed') "expected repoint for $old, got: $res"
+            Assert ((Get-Content -LiteralPath $cursor -Raw | ConvertFrom-Json).mcpServers.'rvt-mcp'.command -eq $exe) "$old not repointed to $exe"
+        }
+        # A custom launcher is reported and left alone.
+        Set-Content -LiteralPath $cursor -Value '{ "mcpServers": { "rvt-mcp": { "command": "C:\\tools\\my-wrapper.cmd" } } }'
+        $res = Invoke-McpClientWiring -Clients 'cursor' -Exe $exe -Mode Add
+        Assert ($res -match 'custom') "expected custom, got: $res"
+        Assert ((Get-Content -LiteralPath $cursor -Raw).Contains('my-wrapper.cmd')) 'custom launcher clobbered'
+    }
+    Test 'Client wiring: explicit uninstalled client reports; uninstall removes only rvt-mcp' {
+        $fixture = New-SetupFixture
+        $res = Invoke-McpClientWiring -Clients 'zed' -Exe 'x' -Mode Add
+        Assert ($res -match 'not detected') "expected not-detected report, got: $res"
+        Assert (-not (Test-Path "$sandboxUserProfile\.config\zed")) 'undetected client dir created'
+        New-Item -ItemType Directory -Path "$sandboxUserProfile\.cursor" -Force | Out-Null
+        $cursor = "$sandboxUserProfile\.cursor\mcp.json"
+        Set-Content -LiteralPath $cursor -Value '{ "mcpServers": { "other": { "command": "x" }, "rvt-mcp": { "command": "y" } } }'
+        Invoke-FixtureSetup $fixture -Client 'cursor' -Uninstall | Out-Null
+        $c = Get-Content -LiteralPath $cursor -Raw | ConvertFrom-Json
+        Assert (-not $c.mcpServers.PSObject.Properties['rvt-mcp']) 'rvt-mcp entry not removed'
+        Assert ($c.mcpServers.other.command -eq 'x') 'sibling removed'
+        Assert (Test-Path -LiteralPath "$cursor.bak") 'removal backup missing'
+    }
+    Test 'Client wiring: malformed config warned not clobbered; WhatIf writes nothing' {
+        $fixture = New-SetupFixture
+        New-Item -ItemType Directory -Path "$sandboxUserProfile\.cursor" -Force | Out-Null
+        $cursor = "$sandboxUserProfile\.cursor\mcp.json"
+        Set-Content -LiteralPath $cursor -Value '{ "mcpServers": { oops'
+        $res = Invoke-McpClientWiring -Clients 'cursor' -Exe 'x' -Mode Add 3>&1 | Out-String
+        Assert ($res -match 'not valid JSON') "expected malformed report, got: $res"
+        Assert ((Get-Content -LiteralPath $cursor -Raw).Contains('oops')) 'malformed file clobbered'
+        Invoke-FixtureSetup $fixture -Client 'cursor' -WhatIf | Out-Null
+        Assert ((Get-Content -LiteralPath $cursor -Raw).Contains('oops')) 'WhatIf wrote client config'
+    }
+    Test 'Client wiring: CLI clients detected only via PATH and invoked through their CLI' {
+        $fixture = New-SetupFixture
+        $fixture | Add-Member -NotePropertyName FakeCli -NotePropertyValue $true
+        Invoke-FixtureSetup $fixture -Client 'claude' | Out-Null
+        Assert (@($fixture.CliCalls | Where-Object { $_ -like 'claude mcp add *' }).Count -eq 1) "claude mcp add not invoked: $($fixture.CliCalls -join ';')"
+        Assert (@($fixture.CliCalls | Where-Object { $_ -like '*rvt-mcp*' }).Count -ge 1) 'entry name missing from cli call'
+    }
+    Test 'Client wiring: claude stderr from the best-effort local remove does not fail a fresh install' {
+        # Real `claude mcp remove -s local` on a fresh machine prints this to stderr;
+        # under $ErrorActionPreference = 'Stop' Windows PowerShell 5.1 threw on it.
+        $fixture = New-SetupFixture
+        $fixture | Add-Member -NotePropertyName FakeCli -NotePropertyValue $true
+        $fixture | Add-Member -NotePropertyName CliStderr -NotePropertyValue @{ 'mcp remove' = 'No MCP server named "rvt-mcp" in local scope' }
+        $fixture | Add-Member -NotePropertyName CliOutput -NotePropertyValue @{ 'mcp get' = 'rvt-mcp:' }
+        Remove-Item -LiteralPath "$sandboxUserProfile\.claude.json" -Force -ErrorAction SilentlyContinue
+        $output = Invoke-FixtureSetup $fixture -Client 'claude' 6>&1 | Out-String -Width 4096
+        Assert ($output -match 'Client\s*:\s*claude: wired') "fresh claude wiring not reported as wired: $output"
+        Assert (@($fixture.CliCalls | Where-Object { $_ -like 'claude mcp add *' }).Count -eq 1) "claude mcp add not invoked after the remove: $($fixture.CliCalls -join ';')"
+    }
+    Test 'Client wiring: claude-desktop resolves the MSIX LocalCache config and preserves cowork keys' {
+        $fixture = New-SetupFixture
+        Remove-Item -LiteralPath "$sandboxLocalAppData\Packages" -Recurse -Force -ErrorAction SilentlyContinue
+        $pkgDir = "$sandboxLocalAppData\Packages\Claude_testpfn\LocalCache\Roaming\Claude"
+        New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+        $cfg = "$pkgDir\claude_desktop_config.json"
+        Set-Content -LiteralPath $cfg -Value @'
+{
+  "mcpServers": { "other": { "command": "x" } },
+  "coworkUserFilesPath": "C:\\Users\\Cowork\\Claude",
+  "preferences": { "coworkBrowserToolsEnabled": true }
+}
+'@
+        $exe = "$($fixture.Root)\server\current\rvt-mcp.exe"
+        $res = Invoke-McpClientWiring -Clients 'claude-desktop' -Exe $exe -Mode Add
+        Assert ($res -match 'wired|added') "expected wired, got: $res"
+        Assert ($res -match [regex]::Escape($cfg)) 'resolved MSIX path not reported'
+        $d = Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
+        Assert ($d.mcpServers.'rvt-mcp'.command -match 'server[\\/]+current[\\/]+rvt-mcp\.exe$') 'rvt-mcp entry missing at MSIX path'
+        Assert ($d.mcpServers.other.command -eq 'x') 'sibling server lost'
+        Assert ($d.coworkUserFilesPath -eq 'C:\Users\Cowork\Claude') 'cowork key lost'
+        Assert ($d.preferences.coworkBrowserToolsEnabled -eq $true) 'cowork prefs lost'
+        Assert (-not (Test-Path "$sandboxUserProfile\.claude.json")) 'claude code file touched by desktop wiring'
+        # Uninstall pulls only the rvt-mcp member.
+        Invoke-McpClientWiring -Clients 'claude-desktop' -Mode Remove | Out-Null
+        $d = Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
+        Assert (-not $d.mcpServers.PSObject.Properties['rvt-mcp']) 'uninstall left the entry'
+        Assert ($d.coworkUserFilesPath -eq 'C:\Users\Cowork\Claude') 'uninstall lost cowork keys'
+    }
+    Test 'Client wiring: claude-desktop prefers the MSIX package cache over a stray Roaming dir' {
+        # Regression: %APPDATA%\Claude exists (native leftovers) but the app is
+        # MSIX and only reads its package LocalCache - and the package family
+        # name is arbitrary, not necessarily Claude_*.
+        $fixture = New-SetupFixture
+        Remove-Item -LiteralPath "$sandboxLocalAppData\Packages" -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path "$sandboxAppData\Claude" -Force | Out-Null
+        New-Item -ItemType Directory -Path "$sandboxLocalAppData\Packages\Anthropic.Claude_9zz\LocalCache\Roaming\Claude" -Force | Out-Null
+        $res = Invoke-McpClientWiring -Clients 'auto' -Exe 'x' -Mode Add
+        Assert ($res -match 'claude-desktop') "auto did not pick up the MSIX package: $res"
+        $expected = "$sandboxLocalAppData\Packages\Anthropic.Claude_9zz\LocalCache\Roaming\Claude\claude_desktop_config.json"
+        Assert (Test-Path -LiteralPath $expected) 'entry not created inside the MSIX cache'
+        Assert (-not (Test-Path "$sandboxAppData\Claude\claude_desktop_config.json")) 'wrote to the Roaming dir the MSIX app ignores'
+        Remove-Item -LiteralPath "$sandboxAppData\Claude" -Recurse -Force
+    }
+    Test 'Client wiring: claude-desktop warns when the app is running and reports not-detected cleanly' {
+        $fixture = New-SetupFixture
+        Remove-Item -LiteralPath "$sandboxLocalAppData\Packages" -Recurse -Force -ErrorAction SilentlyContinue
+        $fixture | Add-Member -NotePropertyName ClaudeRunning -NotePropertyValue $true
+        $pkgDir = "$sandboxLocalAppData\Packages\Claude_pfn2\LocalCache\Roaming\Claude"
+        New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+        $cfg = "$pkgDir\claude_desktop_config.json"
+        Set-Content -LiteralPath $cfg -Value '{ "mcpServers": {} }'
+        $output = Invoke-FixtureSetup $fixture -Client 'claude-desktop' 6>&1 | Out-String -Width 4096
+        Assert ($output -match 'claude-desktop:.*app is running') "running-app warning missing: $output"
+        Assert ((Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json).mcpServers.'rvt-mcp') 'entry not written while app running'
+        $f2 = New-SetupFixture
+        Remove-Item -LiteralPath "$sandboxLocalAppData\Packages" -Recurse -Force -ErrorAction SilentlyContinue
+        $out2 = Invoke-FixtureSetup $f2 -Client 'claude-desktop' 6>&1 | Out-String -Width 4096
+        Assert ($out2 -match 'claude-desktop: not detected') 'not-detected report missing on a clean machine'
+        Assert (-not (Test-Path "$sandboxAppData\Claude\claude_desktop_config.json")) 'created a config for an undetected client'
+    }
+    Test 'Client wiring: default wires detected clients; -Client none and a plain uninstall leave configs alone' {
+        Remove-Item -LiteralPath "$sandboxUserProfile\.cursor" -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path "$sandboxUserProfile\.cursor" -Force | Out-Null
+        $cursor = "$sandboxUserProfile\.cursor\mcp.json"
+        Set-Content -LiteralPath $cursor -Value '{ "mcpServers": {} }'
+        $output = Invoke-FixtureSetup (New-SetupFixture) -Client 'none' 6>&1 | Out-String -Width 4096
+        Assert ((Get-Content -LiteralPath $cursor -Raw).Trim() -eq '{ "mcpServers": {} }') '-Client none touched client config'
+        Assert (-not (Test-Path -LiteralPath "$cursor.bak")) 'backup created on no-op'
+        Assert ($output -match 'wire with -Client') 'detection hint missing'
+        $fixture = New-SetupFixture
+        $output = Invoke-FixtureSetup $fixture 6>&1 | Out-String -Width 4096
+        $c = Get-Content -LiteralPath $cursor -Raw | ConvertFrom-Json
+        Assert ($c.mcpServers.'rvt-mcp'.command -match 'server[\\/]+current[\\/]+rvt-mcp\.exe$') "default install did not wire cursor: $output"
+        Invoke-FixtureSetup $fixture -Uninstall 6>&1 | Out-Null
+        Assert ((Get-Content -LiteralPath $cursor -Raw | ConvertFrom-Json).mcpServers.'rvt-mcp') 'plain uninstall removed the client entry'
+    }
+    Test 'Client wiring: keys that differ only in case do not make a config look broken' {
+        # Claude Code keeps per-project keys such as C:/a/Desktop and C:/a/desktop.
+        New-Item -ItemType Directory -Path "$sandboxUserProfile\.cursor" -Force | Out-Null
+        $cursor = "$sandboxUserProfile\.cursor\mcp.json"
+        Set-Content -LiteralPath $cursor -Value '{ "projects": { "C:/a/Desktop": {}, "C:/a/desktop": {} }, "mcpServers": {} }'
+        $res = Invoke-McpClientWiring -Clients 'cursor' -Exe 'C:\x\rvt-mcp.exe' -Mode Add 3>&1 | Out-String
+        Assert ($res -match 'added') "expected added, got: $res"
+        $raw = Get-Content -LiteralPath $cursor -Raw
+        Assert ($raw.Contains('"rvt-mcp"')) 'entry not written'
+        Assert ($raw.Contains('C:/a/Desktop') -and $raw.Contains('C:/a/desktop')) 'case-variant key lost'
+    }
+    Test 'Client wiring: claude repoints an existing versioned user entry that mcp add would refuse' {
+        $fixture = New-SetupFixture
+        $fixture | Add-Member -NotePropertyName FakeCli -NotePropertyValue $true
+        # Real `claude mcp add` refuses to replace an entry and leaves the old command.
+        $fixture | Add-Member -NotePropertyName CliOutput -NotePropertyValue @{ 'mcp add' = 'MCP server rvt-mcp already exists in user config'; 'mcp get' = 'rvt-mcp:' }
+        $claudeJson = "$sandboxUserProfile\.claude.json"
+        Set-Content -LiteralPath $claudeJson -Value '{ "numStartups": 3, "mcpServers": { "rvt-mcp": { "type": "stdio", "command": "C:\\Users\\Someone\\AppData\\Local\\RvtMcp\\rvt\\server\\0.6.2\\rvt-mcp.exe", "args": ["--read-only"], "env": {} } }, "projects": { "D:/x": { "mcpServers": {} } } }'
+        $output = Invoke-FixtureSetup $fixture -Client 'claude' 6>&1 | Out-String -Width 4096
+        $j = Get-Content -LiteralPath $claudeJson -Raw | ConvertFrom-Json
+        Remove-Item -LiteralPath $claudeJson, "$claudeJson.bak" -Force -ErrorAction SilentlyContinue
+        Assert ($j.mcpServers.'rvt-mcp'.command -eq "$($fixture.Root)\server\current\rvt-mcp.exe") "user entry not repointed, got: $($j.mcpServers.'rvt-mcp'.command)"
+        Assert ($j.mcpServers.'rvt-mcp'.args[0] -eq '--read-only') 'existing args lost'
+        Assert ($j.numStartups -eq 3) 'unrelated claude state lost'
+        Assert ($output -match 'Client\s*:\s*claude: repointed') "repoint not reported: $output"
+    }
+    Test 'Client wiring: a refused claude mcp add is not reported as wired' {
+        $fixture = New-SetupFixture
+        $fixture | Add-Member -NotePropertyName FakeCli -NotePropertyValue $true
+        # The entry lives where ~/.claude.json cannot show it (CLAUDE_CONFIG_DIR).
+        Remove-Item -LiteralPath "$sandboxUserProfile\.claude.json" -Force -ErrorAction SilentlyContinue
+        $fixture | Add-Member -NotePropertyName CliOutput -NotePropertyValue @{ 'mcp add' = 'MCP server rvt-mcp already exists in user config'; 'mcp get' = "rvt-mcp:`n  Command: C:\old\rvt\server\0.6.2\rvt-mcp.exe" }
+        $output = Invoke-FixtureSetup $fixture -Client 'claude' 6>&1 | Out-String -Width 4096
+        Assert (-not ($output -match 'claude: wired')) "refused add reported as wired: $output"
+        Assert ($output -match 'claude: existing rvt-mcp entry left unchanged') "refusal not reported: $output"
+    }
+    # --- Legacy data-root relocation: %LOCALAPPDATA%\RvtMcp -> Bimwright\rvt-mcp ---
+    Test 'Move-LegacyProductRoot: absent old root is a no-op' {
+        Clear-ProductRoots
+        $script:installChanges = New-Object System.Collections.Generic.List[object]
+        Move-LegacyProductRoot -LocalAppData $sandboxLocalAppData
+        Assert ($script:installChanges.Count -eq 0) 'recorded a change for nothing'
+        Assert (-not (Test-Path -LiteralPath "$sandboxLocalAppData/Bimwright")) 'created the family root for nothing'
+        $script:installChanges = $null
+    }
+    Test 'Move-LegacyProductRoot: relocates whole and flattens rvt\server; undo is byte-identical' {
+        Clear-ProductRoots
+        $old = New-LegacyRootFixture
+        $new = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp'
+        $script:installChanges = New-Object System.Collections.Generic.List[object]
+        Move-LegacyProductRoot -LocalAppData $sandboxLocalAppData
+        Assert (-not (Test-Path -LiteralPath $old)) 'old root still present'
+        Assert ((Get-Content -LiteralPath "$new/rvtmcp.config.json" -Raw).Contains('custom')) 'config not relocated'
+        Assert ((Get-Content -LiteralPath "$new/baked/x/tool.json" -Raw).Trim() -eq '{}') 'baked data not relocated'
+        Assert ((Get-Content -LiteralPath "$new/locales/strings.vi.json" -Raw).Contains('"k"')) 'locales not relocated'
+        Assert ((Get-Content -LiteralPath "$new/server/current/rvt-mcp.exe" -Raw).Trim() -eq 'old-server-current') 'nested server not flattened'
+        Assert ((Get-Content -LiteralPath "$new/server/0.6.2/rvt-mcp.exe" -Raw).Trim() -eq 'old-server-062') 'versioned server not relocated'
+        Assert (@($script:installChanges | Where-Object { $_.Kind -eq 'Relocate' }).Count -eq 2) 'both renames not recorded'
+        Undo-InstallChanges
+        Assert (-not (Test-Path -LiteralPath $new)) 'undo left the new root behind'
+        Assert ((Get-Content -LiteralPath "$old/rvt/server/current/rvt-mcp.exe" -Raw).Trim() -eq 'old-server-current') 'undo did not restore the nested server'
+        Assert ((Get-Content -LiteralPath "$old/rvtmcp.config.json" -Raw).Contains('custom')) 'undo lost config data'
+        $script:installChanges = $null
+        Clear-ProductRoots
+    }
+    Test 'Move-LegacyProductRoot: both roots present throws before any move' {
+        Clear-ProductRoots
+        $old = New-LegacyRootFixture
+        $new = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp'
+        New-Item -ItemType Directory -Path $new -Force | Out-Null
+        $script:installChanges = New-Object System.Collections.Generic.List[object]
+        Assert-Throws { Move-LegacyProductRoot -LocalAppData $sandboxLocalAppData } 'Move or remove'
+        Assert (Test-Path -LiteralPath "$old/rvt/server/current") 'old root moved despite the conflict'
+        Assert ($script:installChanges.Count -eq 0) 'a partial move was recorded'
+        $script:installChanges = $null
+        Clear-ProductRoots
+    }
+    Test 'Move-LegacyProductRoot -WhatIf prints planned moves and writes nothing' {
+        Clear-ProductRoots
+        $old = New-LegacyRootFixture
+        $script:installChanges = New-Object System.Collections.Generic.List[object]
+        $output = Move-LegacyProductRoot -LocalAppData $sandboxLocalAppData -WhatIf 6>&1 | Out-String
+        Assert ($output -match 'preview move') 'planned moves not previewed'
+        Assert (Test-Path -LiteralPath "$old/rvt/server/current/rvt-mcp.exe") 'WhatIf moved files'
+        Assert (-not (Test-Path -LiteralPath "$sandboxLocalAppData/Bimwright")) 'WhatIf created directories'
+        $script:installChanges = $null
+        Clear-ProductRoots
+    }
+    Test 'Install relocates the old data root, upgrades in place and keeps siblings' {
+        Clear-ProductRoots
+        $fixture = New-SetupFixture
+        $old = New-LegacyRootFixture
+        $new = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp'
+        New-Item -ItemType Directory -Path "$sandboxLocalAppData/Bimwright/ipt-mcp", "$sandboxLocalAppData/Bimwright/Dwg" -Force | Out-Null
+        Set-Content -LiteralPath "$sandboxLocalAppData/Bimwright/ipt-mcp/keep.txt" 'k'
+        Set-Content -LiteralPath "$sandboxLocalAppData/Bimwright/Dwg/keep.txt" 'k'
+        $output = Invoke-FixtureSetup $fixture -ServerInstallRoot "$new/server/current" 3>&1 6>&1 | Out-String -Width 4096
+        Assert (-not (Test-Path -LiteralPath $old)) 'old root still present after install'
+        Assert ((Get-Content -LiteralPath "$new/server/current/rvt-mcp.exe" -Raw).Trim() -eq 'new-server') 'new server not installed at the new root'
+        Assert ((Get-Content -LiteralPath "$new/server/0.6.2/rvt-mcp.exe" -Raw).Trim() -eq 'old-server-062') 'relocated versioned server lost'
+        Assert (-not (Test-Path -LiteralPath "$new/rvt")) 'emptied rvt\ was not removed'
+        Assert (@(Get-OtherServerVersions -InstallRoot "$new/server/current" | Where-Object Name -eq '0.6.2').Count -eq 1) 'relocated 0.6.2 not seen as a legacy version'
+        $cfg = Get-Content -LiteralPath "$new/rvtmcp.config.json" -Raw | ConvertFrom-Json
+        Assert ($cfg.custom -eq $true -and @($cfg.toolsets) -contains 'all') 'relocated config not merged'
+        Assert ((Get-Content -LiteralPath "$sandboxLocalAppData/Bimwright/ipt-mcp/keep.txt" -Raw).Trim() -eq 'k') 'ipt-mcp sibling touched'
+        Assert ((Get-Content -LiteralPath "$sandboxLocalAppData/Bimwright/Dwg/keep.txt" -Raw).Trim() -eq 'k') 'Dwg sibling touched'
+        foreach ($year in @(2026,2027)) {
+            Assert ((Get-Content -LiteralPath "$($fixture.Root)/addins/$year/RvtMcp/RvtMcp.Plugin.dll" -Raw).Trim() -eq "new-plugin-$year") 'Plugin not upgraded'
+        }
+        Clear-ProductRoots
+    }
+    Test 'Both roots existing stops the install before any change' {
+        Clear-ProductRoots
+        $fixture = New-SetupFixture
+        $old = New-LegacyRootFixture
+        $new = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp'
+        New-Item -ItemType Directory -Path "$new/server/current" -Force | Out-Null
+        Set-Content -LiteralPath "$new/server/current/rvt-mcp.exe" 'newer-server'
+        Assert-Throws { Invoke-FixtureSetup $fixture -ServerInstallRoot "$new/server/current" } 'Move or remove'
+        Assert (Test-Path -LiteralPath "$old/rvtmcp.config.json") 'old root touched'
+        Assert (Test-Path -LiteralPath "$old/rvt/server/current/rvt-mcp.exe") 'old server moved'
+        Assert ((Get-Content -LiteralPath "$new/server/current/rvt-mcp.exe" -Raw).Trim() -eq 'newer-server') 'new root touched'
+        Assert-OldInstall $fixture
+        Clear-ProductRoots
+    }
+    Test 'Failure after relocation restores the old root byte-identically' {
+        Clear-ProductRoots
+        $fixture = New-SetupFixture; $fixture.SmokeFails = $true
+        $old = New-LegacyRootFixture
+        $new = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp'
+        Assert-Throws { Invoke-FixtureSetup $fixture -ServerInstallRoot "$new/server/current" } 'could not start'
+        Assert (-not (Test-Path -LiteralPath $new)) 'new root survived rollback'
+        Assert (-not (Test-Path -LiteralPath "$sandboxLocalAppData/Bimwright")) 'family root left behind - not restored'
+        Assert ((Get-Content -LiteralPath "$old/rvt/server/current/rvt-mcp.exe" -Raw).Trim() -eq 'old-server-current') 'nested current not restored'
+        Assert ((Get-Content -LiteralPath "$old/rvt/server/0.6.2/rvt-mcp.exe" -Raw).Trim() -eq 'old-server-062') 'versioned copy not restored'
+        Assert ((Get-Content -LiteralPath "$old/rvtmcp.config.json" -Raw).Contains('custom')) 'config not restored'
+        Assert-OldInstall $fixture
+        Assert (@(Get-ChildItem -LiteralPath $fixture.Root -Recurse -Filter '*.rvtmcp-rollback-*').Count -eq 0) 'backups left behind'
+        Assert (@(Get-ChildItem -LiteralPath $sandboxLocalAppData -Recurse -Filter '*.rvtmcp-rollback-*' -ErrorAction SilentlyContinue).Count -eq 0) 'backups left under profile'
+        Clear-ProductRoots
+    }
+    Test 'Plugin verification failure restores legacy data without repointing the client' {
+        Clear-ProductRoots
+        $fixture = New-SetupFixture
+        $fixture | Add-Member -NotePropertyName VerificationFails -NotePropertyValue $true
+        $old = New-LegacyRootFixture
+        $new = Join-Path $sandboxLocalAppData 'Bimwright\rvt-mcp'
+        $claudeJson = Join-Path $sandboxUserProfile '.claude.json'
+        @{mcpServers=@{'rvt-mcp'=@{command="$old\rvt\server\current\rvt-mcp.exe";args=@('--read-only')}}} |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $claudeJson
+        $clientHash = (Get-FileHash -LiteralPath $claudeJson).Hash
+        $dataHashes = @(Get-ChildItem -LiteralPath $old -File -Recurse -Force | ForEach-Object {
+            [pscustomobject]@{Path=$_.FullName;Hash=(Get-FileHash -LiteralPath $_.FullName).Hash}
+        })
+        try {
+            Assert-Throws { Invoke-FixtureSetup $fixture -ServerInstallRoot "$new/server/current" -Client 'claude' } 'verification failed'
+            Assert (-not (Test-Path -LiteralPath $new)) 'new root survived rollback'
+            foreach ($file in $dataHashes) {
+                Assert ((Get-FileHash -LiteralPath $file.Path).Hash -eq $file.Hash) "legacy bytes changed: $($file.Path)"
+            }
+            Assert ((Get-FileHash -LiteralPath $claudeJson).Hash -eq $clientHash) 'client points to the rolled-back installation'
+            Assert-OldInstall $fixture
+        } finally {
+            Remove-Item -LiteralPath $claudeJson, "$claudeJson.bak" -Force -ErrorAction SilentlyContinue
+            Clear-ProductRoots
+        }
+    }
+    Test 'WhatIf previews relocation without touching the filesystem' {
+        Clear-ProductRoots
+        $fixture = New-SetupFixture
+        $old = New-LegacyRootFixture
+        $output = Invoke-FixtureSetup $fixture -WhatIf 3>&1 6>&1 | Out-String -Width 4096
+        Assert ($output -match 'preview move') 'relocation not previewed'
+        Assert (Test-Path -LiteralPath "$old/rvt/server/current/rvt-mcp.exe") 'WhatIf moved files'
+        Assert (-not (Test-Path -LiteralPath "$sandboxLocalAppData/Bimwright")) 'WhatIf created the family root'
+        Assert-OldInstall $fixture
+        Clear-ProductRoots
+    }
+    Test 'Shipped scripts parse as Windows PowerShell 5.1 reads them on an ANSI code page' {
+        # powershell.exe decodes a BOM-less script with the system ANSI code page
+        # (1252 en-US, 1258 vi-VN); UTF-8 punctuation such as an em dash then
+        # decodes to a smart quote that ends the string early.
+        foreach ($name in 'install.ps1', 'uninstall-all.ps1') {
+            $path = (Resolve-Path (Join-Path $PSScriptRoot "../../scripts/$name")).Path
+            foreach ($cp in 1252, 1258) {
+                $reader = New-Object IO.StreamReader($path, [Text.Encoding]::GetEncoding($cp), $true)
+                try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+                $errs = $null
+                $null = [System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errs)
+                Assert ($errs.Count -eq 0) "$name has $($errs.Count) parse errors under code page $cp (first at line $(if ($errs.Count) { $errs[0].Extent.StartLineNumber }))"
+            }
+        }
     }
 } finally {
     $env:USERPROFILE = $savedUserProfile

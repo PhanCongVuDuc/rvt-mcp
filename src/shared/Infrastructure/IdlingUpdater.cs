@@ -32,6 +32,13 @@ namespace RvtMcp.Plugin
             // Toasts held while the frame was minimized/modal flush here.
             _toastNotifier?.FlushPendingIfUsable();
 
+            // Toast title ("rvt-mcp 2027") so parallel gateways and Revit processes
+            // serving different agents are distinguishable.
+            var year = AuthToken.RevitVersion;
+            _toastNotifier?.SetInstanceInfo(string.IsNullOrEmpty(year)
+                ? Views.BrandAssets.ProductName
+                : Views.BrandAssets.ProductName + " " + year);
+
             // Rising edge: first client attach (and each re-attach) confirms
             // the agent↔plugin wire end-to-end.
             var connected = isRunning && transport != null && transport.IsClientConnected;
@@ -41,7 +48,7 @@ namespace RvtMcp.Plugin
 
             var count = sessionLog?.Count ?? 0;
 
-            // Language change (combo switch or override-file hot reload) forces a
+            // Language change (Settings command or override-file hot reload) forces a
             // full text refresh even when running/count/toast flags are unchanged.
             var locVersion = L.Version;
             var locChanged = locVersion != _lastLocVersion;
@@ -91,14 +98,15 @@ namespace RvtMcp.Plugin
                     _ribbon.BakeInboxButton.ItemText = L.T("ribbon.bakeInbox.text");
                     _ribbon.BakeInboxButton.ToolTip = L.T("ribbon.bakeInbox.tooltip");
                 }
-                if (_ribbon.LanguageCombo != null)
+                if (_ribbon.SettingsButton != null)
                 {
-                    _ribbon.LanguageCombo.ToolTip = L.T("ribbon.language.tooltip");
-                    var autoItem = FindComboMember(_ribbon.LanguageCombo, LocaleResolver.Auto);
-                    if (autoItem != null)
-                        autoItem.ItemText = L.T("ribbon.language.auto");
-                    _ribbon.LanguageCombo.ItemText = L.T("ribbon.language.current",
-                        ("name", _ribbon.LanguageCombo.Current?.ItemText ?? ""));
+                    _ribbon.SettingsButton.ItemText = L.T("ribbon.settings.text");
+                    _ribbon.SettingsButton.ToolTip = L.T("ribbon.settings.tooltip");
+                }
+                if (_ribbon.LanguageButton != null)
+                {
+                    _ribbon.LanguageButton.ItemText = Views.Settings.InvariantLanguageText.RibbonCaption;
+                    _ribbon.LanguageButton.ToolTip = L.T("ribbon.language.tooltip");
                 }
                 // Baked-tool button labels are user-authored — verbatim, not localized.
             }
@@ -136,16 +144,5 @@ namespace RvtMcp.Plugin
                 ("lastCmd", lastCmd));
         }
 
-        private static ComboBoxMember FindComboMember(ComboBox combo, string name)
-        {
-            try
-            {
-                foreach (var item in combo.GetItems())
-                    if (string.Equals(item.Name, name, StringComparison.Ordinal))
-                        return item;
-            }
-            catch { }
-            return null;
-        }
     }
 }

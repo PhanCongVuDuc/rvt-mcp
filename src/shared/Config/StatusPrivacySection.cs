@@ -16,22 +16,24 @@ namespace RvtMcp.Plugin
             var sb = new StringBuilder();
             sb.AppendLine("Privacy & bake (plugin-visible config)");
             sb.AppendLine($"  Toast notifications: {OnOff(toastEnabled)}  (ribbon toggle)");
-            sb.AppendLine($"  ToolBaker tools: {OnOff(config.EnableToolbakerOrDefault)}  (list/run baked; send_code follows this flag too)");
+            sb.AppendLine($"  ToolBaker tools: {OnOff(config.EnableToolbakerOrDefault)}  (list/run baked)");
+            sb.AppendLine($"  send_code: {OnOff(config.EnableSendCodeOrDefault)}  (independent of ToolBaker)");
+            sb.AppendLine($"  Call log: {OnOff(config.EnableCallLogOrDefault)}  (authenticated server options override per request)");
             sb.AppendLine($"  Adaptive bake suggestions: {OnOff(config.EnableAdaptiveBakeOrDefault)}");
             sb.AppendLine($"  Cache send_code bodies (for bake clusters): {OnOff(config.CacheSendCodeBodiesOrDefault)}");
 
-            if (config.IsPersistSendCodeBodiesActive())
+            if (config.EnableCallLogOrDefault && config.IsPersistSendCodeBodiesActive())
             {
                 var until = config.PersistSendCodeBodiesUntil ?? "?";
                 sb.AppendLine($"  Persist send_code journal (TTL): ON until {until} (UTC)");
             }
             else
             {
-                sb.AppendLine("  Persist send_code journal (TTL): OFF");
+                sb.AppendLine("  Persist send_code journal (TTL): OFF (requires call-log ON and an active TTL)");
             }
 
             sb.AppendLine();
-            sb.Append("Note: change adaptive/cache/persist via env, CLI, or %LOCALAPPDATA%\\RvtMcp\\rvtmcp.config.json; restart MCP client after server flags change. Default privacy keeps body cache and journal OFF.");
+            sb.Append("Note: change adaptive/cache/persist via env, CLI, or %LOCALAPPDATA%\\Bimwright\\rvt-mcp\\rvtmcp.config.json; restart MCP client after server flags change. Default privacy keeps body cache and journal OFF.");
             return sb.ToString();
         }
 

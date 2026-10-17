@@ -17,7 +17,7 @@ namespace RvtMcp.Server
             "query", "create", "modify", "delete", "view",
             "export", "annotation", "mep", "schedule", "families", "graphics", "toolbaker", "meta", "lint",
             "sheets", "materials", "geometry", "rooms", "links", "parameters", "organization", "workflows",
-            "structural", "kei"
+            "structural"
         };
 
         public static readonly string[] DefaultOn =
@@ -29,7 +29,7 @@ namespace RvtMcp.Server
         {
             "create", "modify", "delete", "schedule", "families", "mep", "graphics", "export", "toolbaker",
             "sheets", "materials", "annotation", "rooms", "links", "parameters", "organization", "workflows",
-            "structural", "kei"
+            "structural"
         };
 
         public static HashSet<string> Resolve(RvtMcpConfig config)
@@ -53,12 +53,7 @@ namespace RvtMcp.Server
             // Drop unknown tokens silently (misspelling shouldn't crash the server)
             set.IntersectWith(KnownToolsets);
 
-            // --read-only shortcut: strip every write-capable toolset regardless of
-            // whether it was requested explicitly, via "all", or via defaults.
-            if (config != null && config.ReadOnlyOrDefault)
-            {
-                foreach (var w in WriteCapable) set.Remove(w);
-            }
+            // Read-only is applied to individual annotated methods during registration.
 
             if (config != null && !config.EnableToolbakerOrDefault)
                 set.Remove("toolbaker");

@@ -1,4 +1,4 @@
-﻿﻿# RvtMcp-MCP
+﻿# RvtMcp-MCP
 
 Open-source (Apache-2.0) MCP gateway that lets Claude Code (and any MCP-capable client) drive Autodesk Revit 2022–2027.
 
@@ -12,26 +12,32 @@ MCP client (Claude Code / Cursor / Cline / …) → stdio → C# MCP Server (.NE
 
 Two processes:
 - **RvtMcp.Server.exe** — MCP Server, runs as separate process, stdio transport (ModelContextProtocol NuGet)
-- **RvtMcp.Plugin.dll** — Revit addin, loads inside Revit.exe, TCP listener (R22–R24) or Named Pipe (R25–R27) + ExternalEvent marshalling. Each Revit version gets its own shell DLL compiled from the same `src/shared/` source glob.
+- **RvtMcp.Plugin.dll** — Revit addin, loads inside Revit.exe, TCP listener (Revit 2022–2024) or Named Pipe (Revit 2025–2027) + ExternalEvent marshalling. Each Revit version gets its own shell DLL compiled from the same `src/shared/` source glob.
 
-Communication: newline-delimited JSON (NDJSON). Discovery files written per Revit version in `%LOCALAPPDATA%\RvtMcp\`:
-- `revit-2022.json` / `revit-2023.json` / `revit-2024.json` — TCP transport (port OS-assigned) + auth token + PID
-- `revit-2025.json` / `revit-2026.json` / `revit-2027.json` — Named Pipe transport + auth token + PID
+Communication: newline-delimited JSON (NDJSON). Discovery files written per Revit instance in `%LOCALAPPDATA%\Bimwright\rvt-mcp\`:
+- `revit-<year>-<pid>.json` — per-instance descriptor (schema 3) for every instance, plus the legacy `revit-<year>.json` for older servers
+- `revit-2022.json` / `revit-2023.json` / `revit-2024.json` — legacy per-year files: TCP transport (port OS-assigned) + auth token + PID
+- `revit-2025.json` / `revit-2026.json` / `revit-2027.json` — legacy per-year files: Named Pipe transport + auth token + PID
 
-Discovery file format (`schema_version=2`):
+Discovery file format (`schema_version=3`):
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
+  "host_app": "revit",
+  "host_year": 2024,
   "revit_year": 2024,
+  "target_id": "revit-2024-67890",
+  "pid": 67890,
+  "process_start_utc": "2026-10-06T08:00:00.000Z",
   "transport": "tcp",
   "port": 49891,
   "pipe_name": null,
   "auth_token": "...",
-  "pid": 67890
+  "capabilities": ["tool_catalog"]
 }
 ```
 
-Server auto-detects which Revit is running by scanning these files (skipping any whose `pid` is dead). Use `--target 2022` etc. (4-digit calendar year, NOT legacy R-codes) to pin a specific version when multiple Revits run. Agents should call `revit_list_available_targets` to enumerate live instances and `revit_get_current_target` to inspect the pinned target rather than guessing version strings — `revit_switch_target` hard-fails with an educational error if passed an R-code like `R24`.
+`window_title` is not in the descriptor — the server reads it live from the process. The server binds to exactly one instance by scanning these files (skipping any whose `pid` is dead, deduplicating per-instance vs legacy by pid). Use `--target 2022` / `pid:<n>` / `id:revit-<year>-<pid>` (4-digit calendar year, NOT legacy R-codes) to pin a specific instance when multiple Revits run. Agents should call `revit_list_available_targets` to enumerate live instances and `revit_get_current_target` to inspect the pinned target rather than guessing version strings — `revit_switch_target` hard-fails with an educational error if passed an R-code like `R24`.
 
 ## Project Structure
 
@@ -84,7 +90,7 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 - ConcurrentQueue<PendingRequest> with per-request TaskCompletionSource
 - ExternalEvent.Raise() marshals to Revit UI thread
 - One live command per ExternalEvent (re-Raise if the queue still has work); skip completed TCS (timeout/cancel)
-- Wire responses: agent-visible warning from 64 KiB, strong warning above 256 KiB; past the ~700 KiB enforcement budget (compact bytes; headroom below the 1 MiB delivered ceiling) reads reject with command-specific scope hints and completed mutations return compact `success=true` summaries. Eight approved bulk tools support `output=inline|file` to `%LOCALAPPDATA%\RvtMcp\spill\`; `send_code` and oversized `run_baked_tool` output auto-spill. Spill files are local same-machine artifacts, expire after 24h, and are capped at 50.
+- Wire responses: agent-visible warning from 64 KiB, strong warning above 256 KiB; past the ~700 KiB enforcement budget (compact bytes; headroom below the 1 MiB delivered ceiling) reads reject with command-specific scope hints and completed mutations return compact `success=true` summaries. Eight approved bulk tools support `output=inline|file` to `%LOCALAPPDATA%\Bimwright\rvt-mcp\spill\`; `send_code` and oversized `run_baked_tool` output auto-spill. Spill files are local same-machine artifacts, kept 36h by default (`--spill-retention-hours`, `BIMWRIGHT_SPILL_RETENTION_HOURS`, `spillRetentionHours`; an invalid value uses 36). Age is the only reason to delete one: no file-count cap removes a file younger than the retention time.
 - Shutdown: cancel all pending TCS, stop transport, dispose ExternalEvent
 
 ### Commands
@@ -95,9 +101,9 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 - Unit conversion: Revit internal (feet) → mm using SpecTypeId/ForgeTypeId
 
 ### MCP Tools
-- 230 Revit tools with `--toolsets all` (233 with adaptive bake). Default surface is **41** tools (`query,create,view,meta`). ALL MCP-facing names prefixed `revit_` (e.g. `revit_create_grid`). Server↔plugin wire command names stay unprefixed and unchanged.
+- 233 Revit tools with `--toolsets all` (236 with adaptive bake). The bare binary defaults to **46** tools (`query,create,view,meta`); `install.ps1` seeds `rvtmcp.config.json` with `toolsets=all` so installed machines get the full surface. ALL MCP-facing names prefixed `revit_` (e.g. `revit_create_grid`). Server↔plugin wire command names stay unprefixed and unchanged.
 - Tools live in `[McpServerToolType, Toolset("<name>")]` classes grouped by domain (query, create, modify, delete, view, export, annotation, mep, schedule, sheets, materials, geometry, rooms, links, structural, lint, toolbaker, meta). Each tool = `[McpServerTool]` static method with param docs + examples.
-- Progressive disclosure (A3): default toolsets are `query,create,view,meta`. `--toolsets all` (or an explicit CSV) and `--read-only` gate the rest. `structural` is write-capable and **off** unless requested. `--read-only` strips every write-capable toolset.
+- Progressive disclosure (A3): default toolsets are `query,create,view,meta`. `--toolsets all` (or an explicit CSV) and `--read-only` gate the rest. `structural` is write-capable and **off** unless requested. `--read-only` filters individual tools by their document/file effects, including read tools within otherwise write-capable toolsets, and removes arbitrary code and baked-tool execution.
 - Tool Search (v0.5): server `instructions` field populated at startup (keyword-dense) so MCP clients can discover the surface — it was previously empty, so search returned nothing.
 - `revit_batch_execute` (A6): TransactionGroup-wrapped multi-command call, max 20 sub-commands. `SendToRevit()` helper: transport send + TCS await + 60s timeout (TCS completed on timeout so the UI thread skips the stale request).
 
@@ -105,8 +111,8 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 
 - .NET Framework 4.8
 - ElementId: use `.IntegerValue` (int 32-bit)
-- Floor creation: `doc.Create.NewFloor()` (deprecated but only option in R22)
-- Ceiling: `Ceiling.Create()` (available since R22)
+- Floor creation: `doc.Create.NewFloor()` (deprecated but only option in Revit 2022)
+- Ceiling: `Ceiling.Create()` (available since Revit 2022)
 - Parameter types: ForgeTypeId via `GetDataType()` / `SpecTypeId`
 - Unit detection: `SpecTypeId.Length`, `SpecTypeId.PipeSize`, etc.
 - Newtonsoft.Json 13.0.3 (Revit ships 12.x — binding redirect handles it)
@@ -116,11 +122,11 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 
 - MCP Server: one process, NOT affected by Revit version
 - Plugin: one thin shell per Revit year (`src/plugin-rXX/`), all compiling the same `src/shared/**` source glob
-- Target frameworks: R22/R23/R24 = .NET 4.8; R25/R26 = .NET 8 (`net8.0-windows7.0`); R27 = .NET 10 (`net10.0-windows7.0`)
-- Transport: TCP for R22–R24, Named Pipe for R25–R27 (`ITransportServer` abstraction in `src/shared/Transport/`)
+- Target frameworks: Revit 2022/2023/2024 = .NET 4.8; 2025/2026 = .NET 8 (`net8.0-windows7.0`); 2027 = .NET 10 (`net10.0-windows7.0`)
+- Transport: TCP for Revit 2022–2024, Named Pipe for Revit 2025–2027 (`ITransportServer` abstraction in `src/shared/Transport/`)
 - API version differences handled via `#if REVIT2024_OR_GREATER` / `REVIT2027_OR_GREATER` and the `RevitCompat` helper in `src/shared/Infrastructure/`
 - Revit 2026+: `ElementId.IntegerValue` removed → use `.Value` or `RevitCompat.GetId()`
-- Revit 2026+: `EnableDynamicLoading=true` in csproj; R27 adds `<UseWPF>true</UseWPF>`
+- Revit 2026+: `EnableDynamicLoading=true` in csproj; Revit 2027 adds `<UseWPF>true</UseWPF>`
 - All shells use Nice3point.Revit.Api NuGet packages pinned to the matching year
 
 ## Decision Log
@@ -131,4 +137,4 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 - DTO mapping mandatory: Revit objects not serializable (circular refs, COM interop)
 - AppDomain.GetAssemblies() for Roslyn refs: fixes Assembly.Load crash in Revit context
 - ForgeTypeId/SpecTypeId for unit detection: UnitType deprecated in Revit 2022+
-- Named Pipe for R25+: avoids loopback-firewall prompt UX on modern Windows
+- Named Pipe for Revit 2025+: avoids loopback-firewall prompt UX on modern Windows

@@ -16,11 +16,13 @@ namespace RvtMcp.Plugin.Views.Toast
         public static readonly SolidColorBrush Text = Brush("#1E293B");
         public static readonly SolidColorBrush TextSecondary = Brush("#64748B");
         public static readonly SolidColorBrush CloseIcon = Brush("#64748B");
-        public static readonly SolidColorBrush CloseHover = Brush("#F0F4F8");
         public static readonly SolidColorBrush Primary = Brush("#007ACC");
         public static readonly SolidColorBrush Success = Brush("#38A169");
         public static readonly SolidColorBrush Error = Brush("#E53E3E");
+        public static readonly SolidColorBrush ActivityBorder = Brush("#D8DEE8");
         public static readonly SolidColorBrush MutedAccent = Brush("#94A3B8");
+        // Backdrop behind a capture: darker than the card so a white sheet reads as a sheet.
+        public static readonly SolidColorBrush ThumbnailBackground = Brush("#E6EAF0");
         // Brand wordmark colours come from the logo: navy "BIM" + green "wright".
         public static readonly SolidColorBrush BrandBim = Brush("#0C3F76");
         public static readonly SolidColorBrush BrandWright = Brush("#589039");
@@ -34,8 +36,6 @@ namespace RvtMcp.Plugin.Views.Toast
             Color baseColor;
             if (!vm.Success)
                 baseColor = ((SolidColorBrush)Error).Color;
-            else if (vm.Kind == ToolActivityKind.Write)
-                baseColor = ((SolidColorBrush)Success).Color;
             else
                 baseColor = ((SolidColorBrush)Primary).Color;
 
@@ -46,7 +46,7 @@ namespace RvtMcp.Plugin.Views.Toast
         {
             if (!vm.Success)
                 return Error;
-            return vm.Kind == ToolActivityKind.Write ? Success : Primary;
+            return Primary;
         }
 
         public static string GetIconGlyph(McpToastViewModel vm)

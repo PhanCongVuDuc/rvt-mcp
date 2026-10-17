@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Newtonsoft.Json.Linq;
+using RvtMcp.Plugin;
 using Xunit;
 
 namespace RvtMcp.Tests
@@ -60,14 +62,14 @@ namespace RvtMcp.Tests
         public void Every_approved_group2_tool_has_a_command_specific_recovery_hint()
         {
             var root = GetRepoRoot();
-            var survey = File.ReadAllLines(Path.Combine(root, "docs", "design", "oversized-response-survey.md"));
+            // Keep the approved command baseline independent of maintainer research notes.
+            var group2Tools = File.ReadAllLines(Path.Combine(
+                root, "tests", "RvtMcp.Tests", "Golden", "response-size-scoped-commands.txt"));
             var catalog = File.ReadAllText(Path.Combine(root, "src", "shared", "Infrastructure", "ResponseSizePolicyCatalog.cs"));
-            var group2Tools = survey
-                .Where(line => line.StartsWith("| `revit_", StringComparison.Ordinal) && line.Contains("| **2** |"))
-                .Select(line => line.Split('`')[1].Substring("revit_".Length))
-                .ToArray();
 
-            Assert.Equal(97, group2Tools.Length);
+            Assert.Equal(94, group2Tools.Length);
+            Assert.Equal(group2Tools.Length, group2Tools.Distinct(StringComparer.Ordinal).Count());
+            Assert.All(group2Tools, command => Assert.False(string.IsNullOrWhiteSpace(command)));
             foreach (var command in group2Tools)
                 Assert.Contains("[\"" + command + "\"]", catalog);
         }
@@ -81,7 +83,6 @@ namespace RvtMcp.Tests
         [InlineData("GetStructuralLoadsHandler.cs")]
         [InlineData("AnalyzeStructuralConnectionsHandler.cs")]
         [InlineData("GetModelWarningsSummaryHandler.cs")]
-        [InlineData("QueryKeiDatabaseHandler.cs")]
         public void Existing_limit_scope_declares_a_schema_hard_maximum(string handlerFile)
         {
             var source = File.ReadAllText(Path.Combine(GetRepoRoot(), "src", "shared", "Handlers", handlerFile));
@@ -126,25 +127,24 @@ namespace RvtMcp.Tests
         {
             var eventHandler = File.ReadAllText(Path.Combine(
                 GetRepoRoot(), "src", "shared", "Infrastructure", "McpEventHandler.cs"));
-            var spillIndex = eventHandler.IndexOf("ResponseSpillProcessor", StringComparison.Ordinal);
-            var guardIndex = eventHandler.IndexOf("ResponseSizeGuard.Evaluate", StringComparison.Ordinal);
+            var guardIndex = eventHandler.IndexOf("ResponseEnvelopeGuard.Apply", StringComparison.Ordinal);
+            var logIndex = eventHandler.IndexOf("string resultJson = null", StringComparison.Ordinal);
 
-            Assert.True(spillIndex >= 0, "McpEventHandler must invoke ResponseSpillProcessor.");
-            Assert.True(guardIndex > spillIndex, "Spill must replace bulk data before the response-size guard runs.");
-            Assert.Contains("result.Data = spillOutcome.Data", eventHandler);
+            Assert.True(guardIndex >= 0 && logIndex > guardIndex, "The shared spill/size boundary must run before result logging.");
+            Assert.Contains("result.Data = preGuard[\"data\"]", eventHandler);
         }
 
         [Fact]
         public void Completed_oversized_mutation_is_compacted_without_false_failure()
         {
-            var root = GetRepoRoot();
-            var eventHandler = File.ReadAllText(Path.Combine(root, "src", "shared", "Infrastructure", "McpEventHandler.cs"));
-            var server = File.ReadAllText(Path.Combine(root, "src", "server", "Program.cs"));
-
-            Assert.Contains("mutationCompleted", eventHandler);
-            Assert.Contains("MutationResponseCompactor.Compact", eventHandler);
-            Assert.Contains("success = true", eventHandler);
-            Assert.Contains("data[\"_response_warning\"]", server);
+            var guarded = ResponseEnvelopeGuard.Apply("create_level", "{}", new JObject
+            {
+                ["success"] = true,
+                ["data"] = new JObject { ["created_id"] = 123, ["detail"] = new string('x', 1100000) }
+            }, new RvtMcpConfig());
+            Assert.True(guarded.Value<bool>("success"));
+            Assert.True(guarded["data"].Value<bool>("mutation_applied"));
+            Assert.Equal(123, guarded["data"]["summary"].Value<int>("created_id"));
         }
 
         [Fact]

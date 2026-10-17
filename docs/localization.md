@@ -11,8 +11,8 @@ Resolution order, evaluated once per Revit session:
 1. `BIMWRIGHT_UI_LANGUAGE` environment variable (Windows user/machine env var
    read by the **Revit.exe process** — the `env` block in an MCP client config
    does *not* reach the plugin).
-2. `uiLanguage` in `%LOCALAPPDATA%\RvtMcp\rvtmcp.config.json` — written when you
-   pick a language in the ribbon.
+2. `uiLanguage` in `%LOCALAPPDATA%\Bimwright\rvt-mcp\rvtmcp.config.json` — written when you
+   pick a language in Settings → General → Language.
 3. `auto` → follow Revit's UI language (`ControlledApplication.Language`).
 
 Accepted values: `auto`, or one of the 15 shipped codes — `en`, `zh-CN`,
@@ -21,10 +21,11 @@ Accepted values: `auto`, or one of the 15 shipped codes — `en`, `zh-CN`,
 `auto`. A missing key inside a locale falls back to the English string; a
 missing catalog falls back to English entirely.
 
-Pick a language from the **Language** combo in the ribbon slide-out (RvtMcp
-panel → expand the slide-out). The combo always shows the *effective* language,
-including when the env var is overriding. Selection persists across restarts
-unless `BIMWRIGHT_UI_LANGUAGE` is set — the env var wins every launch.
+Pick a language via the **Language** button in the ribbon slide-out (RvtMcp
+panel → expand the slide-out) — it opens **Settings → General → Language**.
+The language combo always shows the *effective* language, including when the
+env var is overriding. Selection persists across restarts unless
+`BIMWRIGHT_UI_LANGUAGE` is set — the env var wins every launch.
 
 Two Revit instances share one config file and one `locales\` folder: a language
 picked in one session applies to the other after its next restart (same as
@@ -32,7 +33,7 @@ picked in one session applies to the other after its next restart (same as
 
 ## Fixing a translation yourself
 
-Override files live in `%LOCALAPPDATA%\RvtMcp\locales\`:
+Override files live in `%LOCALAPPDATA%\Bimwright\rvt-mcp\locales\`:
 
 ```
 locales\
@@ -84,7 +85,7 @@ the key was accepted, and tell the user it applied live.
 
 ## Caveats
 
-- `uninstall.ps1` keeps `%LOCALAPPDATA%\RvtMcp\locales\` and your overrides
+- `uninstall.ps1` keeps `%LOCALAPPDATA%\Bimwright\rvt-mcp\locales\` and your overrides
   unless run with `-Purge`, which deletes the whole folder.
 - MessageBox buttons (OK/Cancel/Yes/No) come from Windows and follow the OS
   language, not this setting.
@@ -104,16 +105,18 @@ Run once per release on at least the oldest and newest shells (Revit 2022 /
 - [ ] Default launch: UI follows the Revit UI language (verify on a non-English
       Revit if available, else pick a non-English language and confirm chrome
       changes).
-- [ ] Ribbon slide-out → Language combo lists `Auto` + 15 native names; the
-      current effective language is pre-selected.
+- [ ] Ribbon slide-out → **Language** opens Settings → General; the Language
+      combo lists `Auto` + 15 native names with the effective language
+      pre-selected.
 - [ ] Pick `Deutsch` → ribbon labels, tooltips, History window re-render
       immediately; restart Revit → still German (`uiLanguage` persisted).
 - [ ] Set `BIMWRIGHT_UI_LANGUAGE=fr` as a Windows user env var, restart Revit →
-      UI is French regardless of the saved pick; combo shows French. Unset.
+      UI is French regardless of the saved pick; the Settings language combo
+      shows French. Unset.
 
 **Overrides + hot reload**
 
-- [ ] With `en` active, create `%LOCALAPPDATA%\RvtMcp\locales\strings.en.json`
+- [ ] With `en` active, create `%LOCALAPPDATA%\Bimwright\rvt-mcp\locales\strings.en.json`
       with one changed key (e.g. `ribbon.history.text`) → ribbon updates within
       ~1s, no restart. (Under another locale the shipped translation still wins —
       en overrides are the fallback layer.)
@@ -130,7 +133,7 @@ Run once per release on at least the oldest and newest shells (Revit 2022 /
 **Surfaces** (with a non-English locale active)
 
 - [ ] Ribbon: toggle button text + tooltips, History button + count, Toast
-      button tooltip, Bake Inbox, Language combo.
+      button tooltip, Bake Inbox, Settings + Language buttons.
 - [ ] Toast: run `revit_get_rooms` on an empty and a populated model →
       localized empty-state and "label: count" lines; run `revit_capture_…` →
       localized filename line.

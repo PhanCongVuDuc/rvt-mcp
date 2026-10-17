@@ -16,10 +16,14 @@ namespace RvtMcp.Plugin.Commands
             if (App.Instance.Config != null)
                 App.Instance.Config.EnableToast = App.Instance.ToastEnabled;
 
-            RvtMcpConfig.SaveEnableToast(App.Instance.ToastEnabled);
+            string saveError;
+            var persisted = RvtMcpConfig.TrySaveEnableToast(
+                App.Instance.ToastEnabled, out saveError);
+            if (!persisted && !string.IsNullOrWhiteSpace(saveError))
+                App.DebugLog("Toast preference could not be saved: " + saveError);
 
-            if (!App.Instance.ToastEnabled)
-                App.Instance.ToastNotifier?.DismissAll();
+            App.Instance.ToastNotifier?.OnToastEnabledChanged(
+                App.Instance.ToastEnabled, persisted);
 
             return Result.Succeeded;
         }

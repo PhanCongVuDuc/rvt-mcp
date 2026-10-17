@@ -16,11 +16,12 @@ namespace RvtMcp.Plugin.Commands
 
             var transport = App.Instance.Transport;
             var ver = AuthToken.RevitVersion ?? "2022";
-            var discoveryFile = Path.Combine(AuthToken.DiscoveryDir(), DiscoveryFiles.PidFileName(ver, System.Diagnostics.Process.GetCurrentProcess().Id));
+            var discoveryFile = Path.Combine(AuthToken.DiscoveryDir(), AuthToken.DiscoveryFileName(ver));
 
             var info = App.Instance.IsTransportRunning
                 ? transport.ConnectionInfo
                 : Localization.L.T("dialog.connectionInfo.notRunning");
+            info += "\ntarget_id: " + AuthToken.TargetId;
 
             Clipboard.SetText(info);
 

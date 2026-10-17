@@ -1,8 +1,19 @@
 # Wiring rvt-mcp into MCP clients
 
-Procedure for AI agents connecting `rvt-mcp` to a user's MCP client. The
-installer deliberately never edits client configs — this document is the
-agent-side half. Last verified on a live machine: 2026-09-25.
+Procedure for connecting `rvt-mcp` to a user's MCP client. Since v0.8.1 the
+installer implements this same procedure: every run wires each detected client
+(`-Client <names>` limits it; `-Client none` skips it; `-WhatIf` previews;
+`-Uninstall -Client <names>` unwires) — this document remains the reference for the
+manual path, for clients the installer does not know, and for understanding
+what `-Client` does under the hood. Last live-machine verification:
+2026-09-25 (documentation changes do not extend that tested scope).
+
+**Agent-assisted installs:** configure only the user's requested target client(s),
+which may differ from the client hosting the installer agent. Always pass an
+explicit `-Client` selection. **`claude` means Claude Code; `claude-desktop` means
+Claude Desktop.** For Desktop, direct config is the default; MCPB is an optional
+UI-based alternative. Inspect existing config and extension registrations before
+choosing one route. See [Desktop routes](install.md#claude-desktop-choose-one-registration-route).
 
 ## The contract (same for every client)
 
@@ -10,7 +21,7 @@ agent-side half. Last verified on a live machine: 2026-09-25.
 |---|---|
 | Entry name | `rvt-mcp` — exactly one entry per client |
 | Transport | stdio |
-| Command | `%LOCALAPPDATA%\RvtMcp\rvt\server\current\rvt-mcp.exe` (absolute) |
+| Command | `%LOCALAPPDATA%\Bimwright\rvt-mcp\server\current\rvt-mcp.exe` (absolute) |
 | Args | none required (`--toolsets all`, `--read-only` optional) |
 
 The `current` path never changes across upgrades — wire once, upgrade freely.
@@ -27,9 +38,13 @@ The `current` path never changes across upgrades — wire once, upgrade freely.
    (that loses comments and reorders keys).
 7. **Verify** with the client's own `list`/`get` command when one exists, else
    re-parse the file.
-8. **Handshake**: confirm `rvt-mcp` appears in the client's `tools/list`.
-9. **Restart** the client so it spawns the server. A Revit-dependent call
-   (`revit_get_current_view_info`) additionally needs Revit open with a model.
+8. **Restart** the target client so it spawns the server. Fully quit Desktop,
+   including the tray process, before editing its config; re-check the entry after
+   relaunch. A restart of the client hosting this session may end the session.
+9. **Verify the target connection**: its `tools/list` includes
+   `revit_get_current_view_info`. Revit is not required for tool discovery.
+10. **Verify the Revit handshake**: open a model in Revit, start MCP from
+    **Add-Ins → RvtMcp**, then call `revit_get_current_view_info` in the target.
 
 Edge-case rules, all clients:
 
@@ -40,12 +55,35 @@ Edge-case rules, all clients:
 - Never delete unrelated entries. Re-running this procedure must not
   duplicate the entry.
 
+## If you are the agent running inside the client being wired
+
+Wiring the very client your session runs in works the same mechanically, but
+three things differ — plan around them:
+
+1. **The new server's tools cannot appear in this session.** The client only
+   spawns the server at restart, and restarting the client *ends this agent
+   session*. Wire last, after everything else is done, and tell the user
+   plainly that the restart they need will close the current conversation.
+2. **The running client can overwrite your edit.** Both Claude Code
+   (`~/.claude.json`) and Claude Desktop (`claude_desktop_config.json`)
+   persist their config from memory on exit — an entry written while the app
+   runs may silently vanish when it quits. After the client restarts, check
+   the file again and re-apply if the entry is gone.
+3. **Do not claim self-verification before reload.** Confirm the target tool
+   list and Revit handshake in the next session. Tell the user what to expect:
+   `revit_*` tools after restart, then run the Verify steps below there.
+
+If the target is **another** client, keep this installer session running if
+possible and ask the user to restart and verify that target. Your own client's
+successful MCP calls do not verify Claude Desktop. Report untested stages as
+pending and provide the exact next action.
+
 ## Per-client procedures
 
 ### Claude Code (CLI — preferred path)
 
 ```powershell
-claude mcp add -s user rvt-mcp -- "$env:LOCALAPPDATA\RvtMcp\rvt\server\current\rvt-mcp.exe"
+claude mcp add -s user rvt-mcp -- "$env:LOCALAPPDATA\Bimwright\rvt-mcp\server\current\rvt-mcp.exe"
 claude mcp get rvt-mcp     # expect Scope: User config, Status: Connected
 ```
 
@@ -58,15 +96,29 @@ claude mcp get rvt-mcp     # expect Scope: User config, Status: Connected
 
 ### Claude Desktop (file)
 
-- MSIX (this machine): `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json` — **check this first**.
-- Classic fallback: `%APPDATA%\Claude\claude_desktop_config.json`.
-- Key `mcpServers`, standard entry shape. Fully quit the app (tray included)
-  before editing, then relaunch.
+This is the **direct-config route**, not the MCPB extension route. Preview with
+`install.ps1 -WhatIf -Client claude-desktop`, then apply the same selection after
+approval. Do not pass `-Client claude` (that configures Claude Code).
+
+Inspect both the active config below and Desktop's installed extensions first.
+If the gateway already has an MCPB registration, keep that route or obtain consent
+to disable/remove it in Desktop's UI before switching to direct config. Conversely,
+MCPB uses Setup with `-Client none` and requires consent to remove/disable a manual
+entry before enabling the extension. `-Client none` alone does not remove that entry.
+See [MCPB steps](install.md#claude-desktop-mcpb). Do not modify private extension
+storage to automate the UI.
+
+- MSIX (Store/MSIX install): `%LOCALAPPDATA%\Packages\<package-family>\LocalCache\Roaming\Claude\claude_desktop_config.json` — **check this first**. The family name is not always `Claude_*` (enterprise repackaging, channel variants) — probe `Packages\*\LocalCache\Roaming\Claude\` for any package that contains the `Claude` cache dir.
+- Classic/native installer (incl. the `AnthropicClaude` installer — app under `%LOCALAPPDATA%\AnthropicClaude`): `%APPDATA%\Claude\claude_desktop_config.json`.
+- An MSIX install **never reads `%APPDATA%\Claude`** — a stray Roaming dir there must not win over the package cache.
+- Key `mcpServers`, standard entry shape. `mcpServers` lives only in this file — the sibling `config.json` is app state (oauth, allowlists), do not write there.
+- The app **rewrites this file from memory on quit** — an edit made while `claude.exe` is running can be silently reverted. The installer warns when the app is running; fully quit (tray included), verify the entry survived, then relaunch.
+- Cowork sessions bridge local stdio MCP servers through `localMcpBridge` — a normal `command`/`args` entry works in cowork mode and drives the Revit on the same machine. Existing `cowork*` keys and grants in the file are preserved (edits are minimal text surgery, never a JSON round-trip).
 
 ### Codex (CLI)
 
 ```powershell
-codex mcp add rvt-mcp -- "$env:LOCALAPPDATA\RvtMcp\rvt\server\current\rvt-mcp.exe"
+codex mcp add rvt-mcp -- "$env:LOCALAPPDATA\Bimwright\rvt-mcp\server\current\rvt-mcp.exe"
 codex mcp get rvt-mcp --json   # verify transport.command
 ```
 
@@ -96,7 +148,7 @@ codex mcp get rvt-mcp --json   # verify transport.command
 ### Grok (CLI)
 
 ```powershell
-grok mcp add rvt-mcp "$env:LOCALAPPDATA\RvtMcp\rvt\server\current\rvt-mcp.exe" --transport stdio
+grok mcp add rvt-mcp "$env:LOCALAPPDATA\Bimwright\rvt-mcp\server\current\rvt-mcp.exe" --transport stdio
 grok mcp list; grok mcp doctor
 ```
 
@@ -185,11 +237,18 @@ MCP config lives in leveldb; do not edit files. Either:
 
 1. Client-native check where available (`claude mcp get`, `codex mcp get
    --json`, `grok mcp doctor`, `kilo mcp list`).
-2. `tools/list` shows `rvt-mcp` tools — default surface is 41 tools
-   (`query,create,view,meta`), expecting `revit_get_current_view_info`.
-3. With Revit 2022–2027 open and a model loaded, call
-   `revit_get_current_view_info` → `{ "view_name": ..., "view_type": ...,
-   "project_name": ... }`.
+2. In the **requested target client**, `tools/list` shows `rvt-mcp` tools.
+   Installed servers seed `toolsets=all` in `rvtmcp.config.json`; a bare exe without
+   that file defaults to `query,create,view,meta`. Respect existing toolsets and
+   read-only choices instead of requiring a fixed count.
+   `revit_get_current_view_info` should be present; Revit need not be running yet.
+3. With Revit 2022–2027 open, a model loaded and MCP started from
+   **Add-Ins → RvtMcp**, call `revit_get_current_view_info` in the target and
+   confirm the successful response identifies that model/view.
+
+Report installation, target connection and Revit handshake separately. When tools
+are inaccessible to this agent or a user action is outstanding, mark that stage
+pending. A missing restart/model is not grounds for a full uninstall.
 
 ## Troubleshooting
 
@@ -200,3 +259,4 @@ MCP config lives in leveldb; do not edit files. Either:
 | `invalid transport` (Codex) | Orphan `[mcp_servers.<name>.env]` table | Remove the orphan table |
 | Client can't spawn server | Command path wrong or exe missing | Re-check the `current` path; run `rvt-mcp.exe --help` |
 | Two `rvt-mcp` entries | Procedure ran twice with different scope/shape | Remove the extra via the client's remove command or a minimal edit |
+| Long tool call (`revit_open_model`, `revit_link_revit_model`, `revit_export_ifc`, …) still dies near the client's own timeout even with `timeout_seconds` raised | The client enforces its own tool-call limit before the plugin's wait ends (e.g. Claude Code's `MCP_TOOL_TIMEOUT`, milliseconds). IFC defaults to a 600-second plugin wait; the supported maximum is 900 seconds. | Set the client deadline above the plugin budget plus transport grace, e.g. Codex `tool_timeout_sec=960` or Claude Code `MCP_TOOL_TIMEOUT=960000`; if it still fires first, do not retry blindly — the Revit-side operation keeps running, so check state before repeating the call |

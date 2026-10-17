@@ -24,6 +24,7 @@ namespace RvtMcp.Plugin
             ["get_type_parameters"] = "Retry with fewer `elementIds` or `typeIds`.",
             ["list_project_parameters"] = "Retry with `includeCategories=false`.",
             ["get_element_relationships"] = "Retry with fewer `elementIds` or `includeDependents=false`.",
+            ["survey_change_impact"] = "Use fewer `elementIds`, a smaller `maxIdsPerRelation`, or `depth=1`; omitted evidence remains explicit. View iteration is opt-in through `maxViews`.",
             ["list_groups"] = "Retry with a narrower `groupKind` and `includeMembers=false`.",
             ["list_schedules"] = "Retry with `categoryFilter` and `namePattern`.",
             ["get_schedule_definition"] = "Retry with one exact `scheduleId`.",
@@ -111,9 +112,6 @@ namespace RvtMcp.Plugin
             ["workflow_sheet_set"] = "Split `sheets` into smaller batches.",
             ["workflow_view_cleanup"] = "Disable unneeded include flags and lower `limit`.",
             ["workflow_naming_normalization"] = "Retry with narrower `target`/`pattern`, fewer `ids`, and a smaller `limit`.",
-            ["query_kei_database"] = "Retry with a narrower `preset`/`sql`, exact `database`, and a smaller `limit`.",
-            ["write_kei_database"] = "Split `statements` into smaller batches or use `dryRun=true`.",
-            ["import_project_equipment"] = "Split `items` into smaller batches or use `dryRun=true`.",
 
             // Survey group 3: scope added in oversized-response hardening step 1.
             ["get_selected_elements"] = "Retry with `startIndex` and a smaller `maxResults` (hard maximum 1000).",
@@ -173,12 +171,39 @@ namespace RvtMcp.Plugin
         {
             if (string.Equals(commandName, "export_room_data", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(commandName, "export_shared_parameter_file", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(commandName, "workflow_model_audit", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(commandName, "get_material_takeoff", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(commandName, "compute_room_finishes", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(commandName, "workflow_takeoff_report", StringComparison.OrdinalIgnoreCase))
             {
-                return false;
+                try
+                {
+                    var parameters = JObject.Parse(paramsJson ?? "{}");
+                    return string.Equals(parameters.Value<string>("output"), "file", StringComparison.OrdinalIgnoreCase)
+                        || (string.Equals(commandName, "workflow_takeoff_report", StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrWhiteSpace(parameters.Value<string>("output_path")));
+                }
+                catch { return false; }
             }
+            if (string.Equals(commandName, "workflow_model_audit", StringComparison.OrdinalIgnoreCase)) return false;
 
             return classifiedAsWrite || HasUiSideEffect(commandName, paramsJson);
+        }
+
+        public static string? GetOperationError(string? commandName, JObject? data)
+        {
+            // Takeoff returns a workflow DTO even when its optional file export fails.
+            // Transport success alone must not promote that failed write to success.
+            if (!string.Equals(commandName, "workflow_takeoff_report", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(data?.Value<string>("status"), "failed", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (data?["steps"] is JArray steps)
+                foreach (var step in steps)
+                    if (step is JObject item
+                        && string.Equals(item.Value<string>("status"), "failed", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(item.Value<string>("error")))
+                        return item.Value<string>("error");
+            return "Takeoff report export failed.";
         }
 
         public static bool HasUiSideEffect(string? commandName, string? paramsJson)

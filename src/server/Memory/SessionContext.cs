@@ -10,24 +10,25 @@ namespace RvtMcp.Server.Memory
         private readonly List<JournalEntry> _entries = new List<JournalEntry>();
         private readonly object _lock = new object();
         private readonly PatternDetector _patterns = new PatternDetector();
-        private readonly JournalLogger _journal = new JournalLogger();
+        private readonly JournalLogger _journal;
         private readonly string _sessionId;
         private readonly DateTime _startTime;
 
         public JournalLogger Journal => _journal;
         public PatternDetector Patterns => _patterns;
 
-        public SessionContext()
+        public SessionContext(bool enableCallLog = false, string journalDir = null)
         {
+            _journal = new JournalLogger(enableCallLog, journalDir);
             _sessionId = DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" +
                          Guid.NewGuid().ToString("N").Substring(0, 4);
             _startTime = DateTime.UtcNow;
         }
 
         public void RecordCall(string tool, string paramsJson, bool success,
-            long durationMs, string error = null, string resultJson = null)
+            long durationMs, string error = null, string resultJson = null, Newtonsoft.Json.Linq.JObject changes = null)
         {
-            var entry = JournalEntry.Create(tool, paramsJson, success, durationMs, error, resultJson);
+            var entry = JournalEntry.Create(tool, paramsJson, success, durationMs, error, resultJson, changes);
             lock (_lock) { _entries.Add(entry); }
             _patterns.Record(tool, success);
             _journal.Log(entry);

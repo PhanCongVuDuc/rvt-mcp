@@ -1,11 +1,14 @@
-﻿# Changelog
+# Changelog
 
 ## Release history
 
 | Version | Date | Available as |
 |---|---|---|
-| Unreleased | — | Source on `master` only |
-| v0.6.3 | 2026-09-25 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v0.6.3) (latest) |
+| v1.1.0 | 2026-10-07 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v1.1.0) |
+| v1.0.1 | 2026-10-04 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v1.0.1) |
+| v1.0.0 | 2026-10-03 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v1.0.0); NuGet `RvtMcp.Server` 1.0.0 |
+| v0.8.1 | 2026-09-27 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v0.8.1) |
+| v0.6.3 | 2026-09-25 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v0.6.3) |
 | v0.6.2 | 2026-09-22 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v0.6.2); NuGet `RvtMcp.Server` 0.6.2 |
 | v0.6.1 | 2026-08-28 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v0.6.1); NuGet `RvtMcp.Server` 0.6.1 |
 | v0.6.0 | — | Not published on its own; shipped inside v0.6.1 |
@@ -25,8 +28,6 @@ Install only the [latest GitHub Release](https://github.com/bimwright/rvt-mcp/re
 
 ### Added
 
-- **`revit_open_model`** (`meta` toolset) — opens a `.rvt`, `.rte` or `.rfa` and makes it active, or opens it in the background; can detach a workshared model, audit it, and pick a workset configuration. A model Revit already has open is reported back instead of reopened, and `saved_in_version` shows when an older file is being upgraded in memory.
-- Tool counts: default **41**, `--toolsets all` **230**, adaptive bake **233**.
 - **`send_code` runs a snippet in an add-in's freshest build** — list the add-in's live-reload entry (`<namespace>.<Class>.<Method>`, a static method taking a DLL file name and returning its current `Assembly`) under `liveEntries` in `rvtmcp.config.json`. Before each snippet the entry the add-in loaded at startup is asked for the current build; the snippet compiles against it and binds to the very instances the add-in staged, so it can write the add-in's types directly and share them with windows opened from that build. Revit 2024 loads the snippet with `Assembly.LoadFile` (from `%TEMP%\RvtMcp\snippets\<pid>\`) and binds it through an `AssemblyResolve` handler placed first — `Assembly.Load(byte[])` reuses the load context's cached bind and would keep the first build it saw; Revit 2025+ binds through a load context per snippet. The file is re-read on every call.
 - **`live` beside `result`** in `send_code`'s answer when the snippet used an entry's assemblies: `entry`, `source` (`stage` | `startup`), `directory`, `builtAt`. Snippets that touch no such assembly keep the old shape.
 
@@ -34,11 +35,185 @@ Install only the [latest GitHub Release](https://github.com/bimwright/rvt-mcp/re
 
 - **`send_code` refuses instead of silently running an old build** — a snippet using an add-in whose live entry cannot be reached (class not loaded, method missing, it threw, it returned null) fails naming the entry and the reason, unless another entry with the same namespace prefix was reached. A snippet that loads such an add-in's DLL by hand, or picks it out of `AppDomain.GetAssemblies()`, is refused with the way to write it; `mcp:allow-stale-assembly` in a comment lets it run.
 
+## v1.1.0 - Per-instance Revit target binding
+
+Reported and analysed by [@BenniOST](https://github.com/BenniOST) in [#19](https://github.com/bimwright/rvt-mcp/issues/19): when several Revit instances run at once — including several of the same year — v1.0.1 could silently route commands to a different instance than the one the agent believes it is bound to, or stall for ~70 s behind a busy single-client listener.
+
+### Added
+
+- **Per-instance discovery** — each plugin instance now publishes `revit-<year>-<pid>.json` (schema 3) alongside the legacy `revit-<year>.json`, carrying `target_id`, `process_start_utc`, `host_app`/`host_year`, transport, `auth_token` and capabilities. The server resolves `window_title` live from the process, not from the file. Multiple instances of the same year are independently discoverable and addressable.
+- **Explicit instance selectors** — `--target`, `BIMWRIGHT_TARGET` and `revit_switch_target` accept `pid:<n>` and `id:revit-<year>-<pid>` in addition to `auto` and the 4-digit year. `revit_list_available_targets` returns `target_id`, `pid`, `window_title`, `process_start_utc`, `identity_verified` and `source` per instance; `revit_get_current_target` reports the §6.9 binding block (selector, binding state, generation, bound identity, `confirmation_required`, `last_switch`).
+- **Structured target errors** — target failures return `{success:false, error:"<CODE>: …", target:{…}}` with codes `NO_TARGET`, `TARGET_UNAVAILABLE`, `TARGET_BUSY`, `TARGET_LOST`, `AMBIGUOUS_TARGET`, `TARGET_CHANGED`, `TARGET_INTERRUPTED` and `INVALID_TARGET_SELECTOR`, each carrying `sent`, `outcome`, candidate list and `recommended_next_tool` so the agent can recover deterministically.
+- **Generation-pinned calls** — each tool call pins the binding generation at entry; a mid-call `switch_target` can never slide a command onto the new instance, and pending requests on a closed connection end immediately as `TARGET_INTERRUPTED` instead of waiting out the command timeout.
+
+### Changed
+
+- **No silent fall-through** — after the bound instance dies or is replaced, calls fail with `TARGET_LOST`/`TARGET_CHANGED`/`AMBIGUOUS_TARGET` and `confirmation_required` stays true until an explicit `revit_switch_target` confirms a candidate; they never execute on a different instance. Reconnecting probes the bound pid and reads only that instance's descriptor (no pipe→TCP fallback across instances).
+- **Busy detection** — a plugin that accepts the socket but never answers the `set_tool_catalog` handshake reports `TARGET_BUSY` within ~5 s (pipe busy via connect timeout, TCP via handshake timeout) instead of stalling until the command timeout.
+- **`revit_switch_target`** — annotation is now `ReadOnly=false` (session navigation, Destructive=false); it remains available under `--read-only` so the agent can always recover the binding.
+- **Listener ownership** — each transport owns its discovery publisher and tool-catalog slot, so a late `Stop()` from an old listener can no longer delete the new listener's descriptor or clobber its catalog. `Stop()` is idempotent and closes the held client promptly.
+- **Listener back-off** — when a named-pipe listener keeps failing to create its pipe (the "All pipe instances are busy" loop reported in [#19](https://github.com/bimwright/rvt-mcp/issues/19)), retries now back off from 100 ms up to 2 s instead of spinning in a tight log loop.
+
 ### Fixed
 
-- **`revit_send_code_to_revit` with no document open** — the wrapper read `app.ActiveUIDocument.Document` before the snippet ran, so every call threw a bare null reference when Revit had no document, including a snippet calling `app.OpenAndActivateDocument`. `doc` and `uidoc` are now `null` in that case and the snippet decides what to do.
+- **Discovery cleanup on uninstall** — remove both legacy `revit-<year>.json` and per-instance `revit-<year>-<pid>.json` descriptors, including leftovers from older installations in either product data root. Default uninstall still keeps settings, ToolBaker data, logs, captures and unrecognized files; `-WhatIf` changes nothing.
+- **NuGet artifact selection and checksums** — pack/hash the exact server version instead of whichever leftover package has the newest timestamp. Write a `.nupkg.sha256` sidecar for release-asset verification; publishing still requires explicit `-Push`.
+
+### Upgrade note
+
+Update **both** the server and the Revit add-ins from the same release. Mixed deployments remain compatible in both directions, with legacy limits: a v1.1.0 server still reads an older plugin's `revit-<year>.json` file, while a v1.0.1 server reads **only** the legacy file published by the newer plugin — it sees at most one instance per year (the last one to publish it, with handover when that instance stops). Discovering every instance of the same year requires the new per-instance discovery files. The legacy shared file may be dropped in v1.2.0.
+
+Behaviour change for single-Revit users: v1.0.1 reconnected silently after Revit was restarted. v1.1.0 returns `TARGET_CHANGED` instead, and waits for one `revit_switch_target` call, because the restarted Revit may have a different model open.
+
+Upgrade in place without uninstalling first. Close Revit and gateway clients and
+back up the product data folder; settings and ToolBaker data are retained. MCPB
+users run Setup with `-Client none`, update the matching extension and review
+Desktop settings/permissions before reconnecting. See the [upgrade sequence](docs/install.md#upgrade).
+
+### Tests
+
+- New coverage for the descriptor scanner (per-instance/legacy dedup, dead-pid deletion, malformed files), the binding state machine (selector forms, generation pinning, switch semantics), and the gateway against in-process fake listeners (busy vs unavailable, token rotation, descriptor retry window, mid-command interruption, switch-vs-send atomicity, pipe transport).
+- Uninstaller fixtures cover both descriptor formats across years/instances and both data roots, `-WhatIf`, in-use servers, and preservation of personal data, lookalike filenames/directories and sibling products.
+- Add host-free publication-path, NuGet packaging and ZIP checksum/path guard tests. CI verifies the built Setup's checksum, manifest and MCP server in a disposable profile, without installing into or contacting a live Revit.
+
+## v1.0.1 - Export, parameter binding and placement fixes
+
+### Fixed
+
+- **IFC, DWF and DWFx exports** — open the transaction required by Revit when the caller does not already have one, then roll it back after export to avoid leaving exporter changes in the model. IFC now distinguishes a read-only document from a writable document with no active transaction.
+- **Shared-parameter groups** — use Revit's built-in Data group when `parameterGroupId` is omitted or empty, and reject invalid built-in group IDs with a clear error. Remove the invalid default group ID from the parameter tool contracts.
+- **Shared-parameter GUID lookup** — find existing document bindings through their `SharedParameterElement`, so duplicate detection, rebinding and removal by GUID work with Revit's internal definitions. Removal results retain the parameter GUID.
+- **Point-based family placement** — correct the level elevation added by some unhosted families inside the original creation transaction. Read back the final coordinates, level and host before committing; unexpected placement still rolls back. Creation and correction remain one Undo step, with requested and actual coordinates included in mismatch errors.
+
+### Changed
+
+- **IFC wait budget** — `revit_export_ifc` accepts optional `timeout_seconds` from 1 to 900, defaulting to 600 seconds instead of the fixed 60-second wait. Invalid values are rejected before dispatch. After a timeout, check whether the export completed before retrying. Tool summaries and client-timeout guidance now describe this budget; the Codex example allows a 960-second client deadline.
+- **Setup release notes** — include this changelog alongside the installer, uninstaller and agent installation guide in the Setup ZIP.
+
+### Tests
+
+- Add regression coverage for placement correction and rollback, IFC timeout defaults and bounds, parameter-group defaults, and tool catalog/summary consistency.
+- Update Toast position test expectations to include the existing ribbon clearance; runtime Toast placement is unchanged.
+- Verify Setup tools in a disposable profile, including the IFC timeout contract, and support testing package upgrades from both legacy and current installation layouts.
+
+## Post-v1.0.0 documentation updates
+
+Documentation-only follow-up to installation feedback. These changes update the repository guides, not the already published v1.0.0 Setup ZIP/MCPB or their bundled instructions. For the current install protocol, use [AGENTS.md](AGENTS.md) on the default branch.
+
+- **Agent-assisted installer guidance** — the four READMEs now provide a Claude Desktop-specific prompt and distinguish the installer agent from the requested target client. `claude` selects Claude Code; `claude-desktop` selects Desktop. Explicit target selection, preview/approval, checksum verification and UI/restart handoff are documented in [AGENTS.md](AGENTS.md).
+- **Claude Desktop registration routes** — direct config is the default for agent-assisted installs; MCPB remains an optional extension/settings-UI route. Documented classic/MSIX config detection, existing registrations, duplicate prevention and the same-release executable-hash requirement. See [Desktop install routes](docs/install.md#claude-desktop-choose-one-registration-route) and [per-client wiring](docs/mcp-client-wiring.md#claude-desktop-file).
+- **Old-to-new upgrade failures and recovery** — documented v0.8.1/v0.6.x → v1.0.0 migration problems: `Both … exist`, `Could not move …`, runtime `MIGRATION_REQUIRED`, stale server paths and MCPB mismatch/duplicate registration. Recovery preserves settings and ToolBaker data, checks rollback reports, and avoids blind deletion or uninstall. See [upgrade troubleshooting](docs/install.md#troubleshooting-upgrades-from-v081-or-v06x-to-v100).
+- **Verification reporting** — installation, target-client connection and Revit handshake are separate checks; outstanding user actions stay pending. Revit is not required for `tools/list`. See [verification and handoff](docs/install.md#verify-and-hand-off).
+
+## v1.0.0 - Change tracking, runtime controls, and viewport layout
+
+Follows v0.8.1. Tool counts: default **46**, `--toolsets all` **233**, adaptive bake **236**, `--read-only` **95** (without personal baked tools). Server and add-ins must come from the same release.
+
+### Added
+
+- **`revit_change` prompt** — surveys existing relationships, agrees a scope for each request, asks for confirmation of a concrete proposal before writing, then reads back the targets and records the user's reason in the conversation. Requires `query,meta`, not `send_code`; read-only sessions stop at survey/proposal. Missing or incomplete checks remain explicit, and readback does not claim exhaustive changed-element tracking. Adds a server-instructions pointer. v1.0.0 offers six prompts in total; there is no persistent change database or server-enforced workflow lock.
+
+- **Typed change-impact survey** — `revit_survey_change_impact` in `query` reports ten bounded relationship groups with explicit incomplete coverage, exact/lower-bound counts and discussion flags. Works with read-only and send-code disabled. Each request needs `scopeThreshold`; view/schedule iteration defaults to off and requires `maxViews > 0`. Native calls cannot be preempted by the soft time budget. No persistent survey/history snapshot is created. `revit_change` now uses this tool.
+
+- **MCP-scoped element changes** — `DocumentChanged` capture adds `_changes` for committed additions, modifications and deletions, including indirect/internal elements. Responses group IDs by document and cap each list at 200 while retaining counts. Ordinary reads remain unchanged. Known batch rollback returns no changes; arbitrary group rollback reports incomplete coverage rather than guessing. Paths are not collected, and the optional call journal stores `Changes` separately from truncated result text. No persistent reason database is introduced.
+
+- **Local change history** — per-model SQLite stores captured MCP calls and all tracked IDs separately from the public 200-ID cap. `revit_record_change` binds the user's reason to explicit server-issued call IDs; `revit_get_change_records` queries IDs, UniqueIds and dates with unknown/unassigned reasons visible. History defaults on independently of call logs and has JSON/env/CLI off switches. Private model identities stay local; pending captures support idempotent recovery after server/storage failures. Capture bounds, unavailable identities and storage failures remain explicit. No Save/Sync or later manual Undo tracking is claimed.
+
+- **History identity continuity** — proven Windows file aliases and renames can follow the same history. Revit lineage only suggests a choice for copies/Save As; `revit_resolve_history_identity` records the owner's explicit continuation or independent history. Existing databases and reason ownership stay intact, links are reversible, and legacy keys can be listed with `revit_get_change_records(listModels=true)`. Ordinary reads remain unchanged.
+
+- **Survey-to-history observations** — an enabled typed survey retains only a bounded, session/document-bound RAM selection for five minutes and one write. UI changes/Undo, view/document transitions and Save As invalidate it. The plugin remeasures four selected built-ins at execution and stores observations only for captured modified elements with matching UniqueIds. Existing typed-setter values remain intact. Stale/missing coverage is explicit; public survey JSON cannot supply measured before-values. Read calls still create no history/pending file. Legacy databases remain readable without a write-time migration on reads.
+
+- **Viewport layout in sheet space** — `revit_get_viewport_geometry` reports each viewport's visible crop rectangle, view outline, box centre, scale, rotation, pinned and crop flags in sheet millimetres, with `coordinate_frame` stating that these are paper coordinates, not project coordinates; annotation hanging past the crop is flagged. `revit_align_viewports` aligns viewports to a reference viewport (`left`, `right`, `top`, `bottom`, `center_x`, `center_y`, `center`) or centres a group on the title block extent (`center_on_sheet`); `dryRun` defaults to true, pinned or rotated viewports are refused before anything moves, and the result reads back the applied positions. One Revit Undo step. On Revit 2026 and later a viewport bound to a saved position is refused as well (Revit puts it back at regeneration, so a committed move would not hold); `revit_get_viewport_geometry` reports it as `saved_position`. The result carries a `status` of `applied`, `partially_applied` or `not_applied` judged on the read-back, with `failed_viewports` for moves Revit did not keep; when none held the call fails instead of reporting `applied`. The new `revit_drawing_layout` prompt walks through reading, agreeing the alignment, a dry-run plan, confirmation and read-back. Both tools live in the `sheets` toolset.
+
+- **Runtime switches** — `--enable-send-code` / `--disable-send-code` control send_code independently of ToolBaker (default on). `--enable-call-log` / `--disable-call-log` control server and plugin call persistence (default off); send-code body journaling additionally requires its TTL opt-in. Authenticated server settings apply per request without changing the plugin's saved configuration.
+
+- **Per-tool read-only permissions** — all typed tools explicitly declare the four MCP hints; send_code carries no annotations. `--read-only` exposes the 95 read-only tools within the selected toolsets, excluding document/file writes while retaining transient UI operations. The four README allow lists are checked against the annotations. Arbitrary code and baked tools must be invoked directly, outside `batch_execute`.
+
+- **Configurable response guard** — on by default, with CLI/environment/JSON controls for warning, strong-warning and response budgets. A server filter measures UTF-8 MCP result bytes including escaping and metadata; the transport cap remains active when the optional guard is off. Oversized reads fail with narrowing guidance, completed writes return compact outcomes, and arbitrary output spills once to a local file with an unknown mutation outcome. Rechecking an existing Unicode spill preview preserves the original artifact. Spill files are kept 36 hours by default (v0.8.1: 24 hours and at most 50 files); `--spill-retention-hours`, `BIMWRIGHT_SPILL_RETENTION_HOURS` or `spillRetentionHours` change it, an invalid value uses 36, and no file-count cap deletes a file younger than the retention time.
+
+- **`revit_list_recent_models`** — lists this Revit's recent files when no document is open. The agent asks which one to open, then calls `revit_open_model`. A no-document failure now says Revit is running and names that tool.
+
+- **Tool search** — Settings → Tools has a search box that matches the tool name or its description. Each row tooltip shows the name and the full description.
+
+- **Toast position and richer tooltips** — Settings → Toast has independent horizontal (Left/Right) and vertical (Top/Bottom) alignment for the four corners, an opt-in **Allow dragging the card** switch that moves the card by its title row, and **Reset position**. Changes apply to the open card and are saved immediately; changing a corner clears the saved drag offset, turning drag off keeps it, and a plain click still opens History. Offsets are stored relative to the Revit window in DIPs and clamped to the work area of its monitor. A bottom-anchored card grows upward, with an opposite-side fallback when there is no room; the card enters and leaves from its own side, and corner changes glide. Motion follows the Windows animation setting, and a failed save is shown under the setting while the choice stays active for the session. A new result in an open timeline now glides in: the rows rise by the distance the list scrolled, the new row fades in and its outcome dot pops, without changing the card size or the scroll offset. A reader who has scrolled up keeps their place with no effect (the scroll bar only hints that the list grew), and reduced motion shows the row directly. The latest-tool line and timeline rows now show the sanitized result, Success/Failed, completion time and measured duration on hover. Strings for all 15 languages. The default is still top-left with no drag, but a top-corner card now sits 56 DIPs lower so it clears Revit's title bar and ribbon tabs (bottom corners are unchanged); coordination between toasts of several Autodesk applications is not included.
+
+- **Toast activity timeline** — deliberate hover reveals the latest three compact outcomes with completion times and distinct success/failure nodes; scroll to older calls within the same card. New results follow the tail while keeping an older reading position stable. Entries stay in RAM with bounded, redacted summaries; script objects/arrays show field/item counts and surveys disclose incomplete coverage. First movement over a card that appeared under a stationary cursor now pauses idle, and late hover drains its closing render. History clicks, localization, capture hold, branding and reduced motion remain supported.
+
+- **Toast card layout** — the title names the gateway and Revit year (`rvt-mcp 2022`), replacing the small footer label and the `RVT-MCP` prefix. The next line names the latest tool, and the Success · Failed · Capture counts spread evenly across the card, each number sized and aligned with its label.
+
+- **Capture thumbnail stays at least 5 seconds** — a later result without an image clears the preview only after that. Back-to-back captures switch to the newest one every 5 seconds. The preview does not change while the pointer is on the card.
+
+- **Toast motion** — counters roll like an odometer: only the digits that change move, a new value continues the roll instead of restarting it, and a number that gains a digit widens gradually. The capture sits in one fixed frame with the image centred on both axes, so the card keeps its size between captures of different shapes. The frame opens with the card growing around it, cross-fades to the next capture, and fades out before the card closes up. All of it follows Windows' animation setting: with **Animation effects** off, everything changes at once.
+
+- **Persistent branding switch** — Settings → Toast → **Show branding** (off by default). The wordmark stays hidden until the pointer moves onto the card, wipes in, and fades out when the pointer leaves. While branding is on, the card keeps that bottom row so the height does not change on hover. The card is narrower. A stationary cursor under a card that just opened does not count. The choice applies immediately and is saved as `showBranding` in the user config, including when turned off. A save failure is reported beneath the switch; the new state still applies to the current session.
+
+- **Update notice** — the Revit add-in asks `https://api.github.com/repos/bimwright/rvt-mcp/releases/latest` in the background at startup, at most once every 24 h (5 s timeout, errors ignored, prereleases ignored), and caches the answer in `%LOCALAPPDATA%\Bimwright\rvt-mcp\update-check.json`. This is the only outbound request the add-in makes by itself. When a newer stable release exists, a small card without focus steal appears at the bottom right with **Copy prompt** (a ready-to-paste prompt for your AI agent with the installed version, the latest version and the release URL), **Open release page**, **Skip this version** (remembered) and **Close**. Set `BIMWRIGHT_DISABLE_UPDATE_CHECK=1` to turn the check off. The server never calls the network for this: when the cached check knows a newer, not-skipped release, the first line of the `initialize` instructions says so (the 2 KB cap still holds) and `revit_list_available_targets` / `revit_get_current_target` carry an `update_available` object (`null` when up to date). Strings for all 15 languages.
+
+### Changed
+
+- **Data folder moved to `%LOCALAPPDATA%\Bimwright\rvt-mcp\`** — all per-user state (config, discovery, logs, captures, ToolBaker data, locales) and the server (`server\current\rvt-mcp.exe`) now live under the shared bimwright family root. The installer moves an existing `%LOCALAPPDATA%\RvtMcp\` once, byte-identical (Revit and MCP clients using rvt-mcp must be closed), repoints known client entries to the new `server\current` path, restores the old folder if the install fails, and stops when both folders exist. Server and add-ins must come from the same release.
+
+- **Destructive hints and response outcomes** — tools that replace or delete existing data now advertise `Destructive=true` with recovery guidance, including rebindings and takeoff-file overwrites. Repeated plugin/server response compaction preserves dry-run, rollback and unknown mutation outcomes. Takeoff exports through `output_path` retain successful completion when response detail is oversized; failed exports remain errors. Regression tests cover permission semantics, the two-stage guard and shared-config test isolation.
+
+### Fixed
+
+- **Untyped JSON arguments** — preserve JSON values bound by the MCP SDK inside arrays and nested objects, including dimension references, filled-region and room-separator points, sheet renumber items, volumes, titleblock values, workflow sheet items and baked-tool arguments.
+
+- **Room and area failure handling** — capture Revit warnings in the tool result and silently roll back unresolved errors instead of opening failure dialogs. A rolled-back room transaction returns an error.
+
+- **MEP disconnect filter description** — advertise `mechanical`, matching the handler validation.
+
+- **SQLite spill initialization in Revit** — initialize the referenced SQLite bundle explicitly when writing a database, so another add-in's loaded bundle cannot leave this gateway's provider unset.
+
+- **Structured send-code toast results** — object and array results now produce compact JSON summaries instead of failing toast completion. Scalar/null handling and the 100-character summary limit are preserved.
+
+- **Closed-document change capture** — capture summaries use metadata collected during transactions, so a command that closes its temporary project or EditFamily document before returning does not dereference an invalid Revit document.
+
+- **History review fixes** — ordinary reads no longer publish pending captures or add `_history`. Unsaved/unresolved documents are skipped before writing; legacy invalid captures are quarantined and bounded recovery runs in the background. `revit_get_change_records` can resolve the active saved model without a receipt from a read. Server options cannot relax plugin read-only/send-code policy. Runtime data migration now covers old product folders, resumes partial copies, preserves SQLite WAL data and reports conflicts before loading fallback settings. History failures emit redacted diagnostics; Toast tests use isolated temporary folders.
+
+- **ToolBaker on Revit 2027** — compiler policy now respects type accessibility, matching normal C# compilation. Internal global Revit types no longer shadow public API names such as `UIApplication` and `Transaction`; the API allowlist and blocked operations are unchanged.
+
+- **Installer wires Claude Code on Windows PowerShell 5.1** — client CLI calls (`claude`, `codex`, `grok`) no longer run under `$ErrorActionPreference = 'Stop'`, so a harmless stderr line such as `No MCP server named "rvt-mcp" in local scope` on a fresh machine no longer fails the wiring (it was reported as `claude: failed` while the install exited 0). Regression test added.
+
+### Documentation
+
+- **Why activity toasts exist** — the English and Vietnamese READMEs explain tool-result feedback, freedom from watching the chat, multitasking and a more modern, non-modal experience.
+
+## v0.8.1 - Two-sided installer, revit_open_model, and a Settings window
+
+Follows v0.6.3; there are no v0.6.4–v0.8.0 releases.
+
+- **One installer run sets up both sides** — the add-in for every installed Revit 2022–2027 and the `rvt-mcp` entry in every MCP client it detects.
+- **New tool `revit_open_model`** and four **MCP prompts**.
+- **Part of community PR [#15](https://github.com/bimwright/rvt-mcp/pull/15) merged** — its `send_code` and `switch_target` fixes are cherry-picked, and its `revit_open_model` proposal was reworked to follow the workshared-model policy. Thanks [@PhanCongVuDuc](https://github.com/PhanCongVuDuc).
+- Tool counts: default **41**, `--toolsets all` **226**, adaptive bake **229**.
+
+### Installer
+
+- **`-Client` installer wiring** — every install wires each detected client (`-Client <names>` limits it, `-Client none` skips it; `-Uninstall` only unwires clients named with `-Client`) and applies the `docs/mcp-client-wiring.md` procedure for 19 supported clients: Claude Code/Desktop, Codex, Grok CLIs, and file-config clients (Cursor, VS Code, Cline/Roo, Zed, Gemini, Antigravity, Devin, LM Studio, kun, Kiro, Qwen, Windsurf, OpenCode, Kilo). File edits are minimal text surgery — JSONC comments and sibling entries survive, a `.bak` backup is written first, and a failed write restores it. Versioned-path entries are repointed to `current` with args/env kept; custom launchers and legacy `bimwright-rvt*` entries are reported, never replaced. A config whose keys differ only in case (Claude Code's per-project Windows paths) is still wired instead of being reported as invalid JSON. Cherry Studio gets a `cherrystudio://` deeplink. `-Uninstall -Client <names>` removes just the `rvt-mcp` entry, and `-WireClient` remains as a deprecated alias.
+- **Full tool surface on install** — the installer seeds `%LOCALAPPDATA%\RvtMcp\rvtmcp.config.json` with `"toolsets": ["all"]` when the file doesn't already set `toolsets`, so fresh installs expose all 226 tools. An explicit `toolsets` choice is preserved on upgrade; `--toolsets`, `BIMWRIGHT_TOOLSETS` and `--read-only` still outrank the file, and a bare `rvt-mcp.exe` without it still defaults to `query,create,view,meta`.
+- **Claude Desktop on MSIX installs** — `-Client` probes `Packages\*\LocalCache\Roaming\Claude` for any package family name (not just `Claude_*`) and prefers a package that actually contains the Claude cache over a stray `%APPDATA%\Claude` dir, which an MSIX install never reads. Wiring while `claude.exe` is running emits a warning that the app rewrites the config from memory on quit; `cowork*` keys and other app state are preserved.
+- **Self-wiring guidance** — `docs/mcp-client-wiring.md` now covers the agent that configures the client it runs inside: wire last (restart ends the session), the running app can overwrite the config on exit, and `tools/list` verification happens in the next session.
+
+### Added
+
+- **`revit_open_model`** (`meta` toolset) — opens a `.rvt`, `.rte` or `.rfa` and makes it active, or opens it in the background. A file whose header cannot be read is never opened, because its worksharing state is unknown. A workshared `.rvt` is never opened directly: a new local copy is always created from its central model (same as Revit's Open → "Create New Local") under the Revit.ini `ProjectPath` folder as `<central>_<username>.rvt` — missing `ProjectPath` stops the call rather than picking a folder. An existing local at that path is renamed with a timestamp — never deleted or overwritten — unless it is open in the session, has changes not yet saved to central, or its header cannot be read, in which case the call stops and asks the user. `worksets` (all|none|lastViewed) applies to workshared models; `audit` is opt-in because it is slow; there is no `detach` option — detaching or opening a central directly goes through `revit_send_code_to_revit`. A model Revit already has open is reported back (and activated when `activate=true`) instead of reopened. `saved_in_version` shows when an older file is being upgraded in memory. If `CreateNewLocal` refuses after the existing local was renamed aside (e.g. a central saved in an older Revit version), the error names the timestamped file it was kept as. A file currently loaded as a link in an open document is refused with a message to close the host or unload the link first.
+- **Long-run `timeout_seconds`** on `revit_open_model`, `revit_link_revit_model`, `revit_reload_link` and `revit_load_family_from_path` — the request envelope carries the caller's plugin wait (1–900 s, default 600 s; out-of-range values are refused rather than clamped) because opening a model that pulls in many links commonly exceeds the 60 s default. Other tools keep the fixed 60 s wait.
+- **MCP prompts** — `revit_getting_started`, `revit_model_audit`, `revit_pre_issue_check`, `revit_stairs`: user-invoked markdown workflows, always listed; a prompt whose toolsets aren't enabled returns the exact `--toolsets` line instead of its steps. `revit_stairs` is the one write-capable prompt (via `send_code`) and asks for confirmation before writing. Prompts never advise turning off `--read-only`; `revit_pre_issue_check` needs explicit member sheets for a named sheet set and reports unresolved or incomplete checks as `NOT VERIFIED`; `revit_stairs` carries its own transaction, failure-reporting and scope-cleanup template.
+- **Settings window** — the ribbon slide-out gains **Settings** and **Language** buttons (replacing the language combo; Language opens Settings → General → Language). General shows the live connection state, Toast sets the card idle duration (10/20/30/60 s), Tools lists the connected server's tools with their timeout policy, and About carries version plus an offline license view. Each setting is one row (label and short explanation left, control right) inside flat tabs and white cards under a `BIMwright | RVT-MCP Settings` header. Connection fits two rows: a coloured state badge with listener restart (new port/pipe and token) and On/Off — the same actions as the ribbon MCP toggle — then `Transport type: TCP | Port: …` with Copy, disabled when there is no TCP port. Save errors appear under the setting they belong to; scrollbars match History. **Apply** and **Discard changes** (formerly Cancel) are enabled only while changes are unsaved; Toast On/Off and Language still apply immediately. Styles are scoped to the Settings window.
+
+### Fixed
+
+- **`revit_send_code_to_revit` with no document open** — the wrapper read `app.ActiveUIDocument.Document` before the snippet ran, so every call threw a bare null reference when Revit had no document, including a snippet calling `app.OpenAndActivateDocument`. `doc` and `uidoc` are now `null` in that case and the snippet decides what to do. The same null reference in the `run_baked_tool` wrapper (`ToolCompiler.cs`) is fixed as well.
 - **`revit_list_available_targets` hint** — it told callers to pass a `year` to `revit_switch_target`, whose parameter is named `version`; following it produced an invocation error that read as a dead server.
+- **Toast and History showed some failures as successes** — a `revit_batch_execute` that rolled back or had failed sub-commands, and a response rejected as too large (which the agent already received as `success=false`), showed green in the toast and History and were logged as successes in `mcp-calls.jsonl`. They now show as failures with the reason. The response to the agent is unchanged.
 - **`dotnet build src/RvtMcp.sln` on a clean tree** — the test project's server reference now compiles into its own `obj`, so parallel builds no longer collide with the solution's server build (`MSB3371`/`CS2012`).
+
+### Changed
+
+- **Activity toasts use one shared card** — successive results update a single card (20-second default idle lifetime, configurable in Settings and paused while hovered) instead of stacking per-result windows. Its three rows show `RVT-MCP - {tool name}`, vertically rolling Success / Failed / Capture counts, and the right-aligned BIMwright wordmark. Success keeps the light-blue gradient, errors keep red; capture thumbnails are no longer embedded. The × button stays transparent on hover, and the brand's two letter layers crossfade within a moving highlight without dimming the whole logo. Animations respect Windows reduced-motion preferences.
+- **Activity card clicks open History** — clicking the card routes to the host History window, while the close button dismisses the card. Capture paths are never opened from the toast.
+- **Settings config persistence** — Settings reads a side-effect-free snapshot, applies staged keys with per-key results, and writes through a flushed same-directory temp file replacement. Toast idle duration accepts 10/20/30/60 seconds; send-code journal retention accepts 1–48 hours and preserves the selected duration when Off.
 
 ## v0.6.3 - Localized UI and a Revit-only installer
 
@@ -115,7 +290,7 @@ First GitHub Release after v0.5.0 was unpublished. The client setup ZIP is `RvtM
 - **Coordinate workflow descriptions** now document Revit/CAD acquire support, publish preflight, confirmation requirements, and CAD publish limitations.
 - Tool counts: default **40**, `--toolsets all` **229**, adaptive bake **232**.
 
-## v0.6.0 - Agent guardrails, oversized-response spill, toast/privacy, and KEI tools
+## v0.6.0 - Agent guardrails, oversized-response spill, and toast/privacy
 
 Not published on its own — this surface first shipped in v0.6.1.
 
@@ -125,7 +300,6 @@ Not published on its own — this surface first shipped in v0.6.1.
 - **Opt-in `send_code` body journal (TTL)** — `persistSendCodeBodies` + `persistSendCodeBodiesUntil` (CLI/env/JSON); plugin writes redacted journal under `%LOCALAPPDATA%\RvtMcp\`.
 - **Capture path UX** — clearer allowlist errors; optional default output under captures.
 - **Status dialog privacy/bake flags** — ribbon **Status** lists toast, ToolBaker, adaptive bake, body cache, and persist journal (read-only snapshot for operators). Unit-tested via `StatusPrivacySection`.
-- **Toolset `kei`** — `revit_get_active_project_db`, `revit_query_kei_database`, `revit_write_kei_database`, `revit_import_project_equipment` for WAL-safe KEI project SQLite through the Revit process. Enable with `--toolsets kei` (or `--toolsets all`). See `docs/kei-equipment-import.md`.
 - **Local oversized-response spill** — eight approved bulk tools accept `output=inline|file` and write SQLite, NDJSON, JSON, or text artifacts under `%LOCALAPPDATA%\RvtMcp\spill\`. Responses include an absolute local path, format/schema, true byte count, and a bounded preview. `revit_send_code_to_revit` and oversized `revit_run_baked_tool` output auto-spill. Files older than 24 hours are removed and the directory is capped at 50 artifacts.
 
 ### Changed
@@ -144,7 +318,7 @@ Not published on its own — this surface first shipped in v0.6.1.
 ### Docs
 
 - English README rewritten (human tone); vi / zh-CN / ja ports aligned. Tool counts: default **40** (`query,create,view,meta`), `--toolsets all` **227**, adaptive **230**.
-- Product close-out notes under `docs/analysis/` (send_code for out-of-scope work; no Python host / Viewer / Family Editor suite this cycle).
+- Clarified product scope: send_code for out-of-scope work; no Python host / Viewer / Family Editor suite this cycle.
 - `docs/roadmap.md` non-goals updated.
 
 ### Product posture

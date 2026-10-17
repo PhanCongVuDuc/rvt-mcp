@@ -14,6 +14,7 @@ namespace RvtMcp.Plugin
             _runtimeCache = runtimeCache;
             Register(new Handlers.ShowMessageHandler());
             Register(new Handlers.GetCurrentViewHandler());
+            Register(new Handlers.GetChangeHistoryContextHandler());
             Register(new Handlers.GetSelectedElementsHandler());
             Register(new Handlers.GetFamilyTypesHandler());
             Register(new Handlers.AiElementFilterHandler());
@@ -24,6 +25,7 @@ namespace RvtMcp.Plugin
             Register(new Handlers.GetTypeParametersHandler());
             Register(new Handlers.ListProjectParametersHandler());
             Register(new Handlers.GetElementRelationshipsHandler());
+            Register(new Handlers.SurveyChangeImpactHandler());
             Register(new Handlers.ListGroupsHandler());
             Register(new Handlers.GetGroupMembersHandler());
             Register(new Handlers.ListAssembliesHandler());
@@ -52,6 +54,7 @@ namespace RvtMcp.Plugin
             // Phase 6: Dynamic Code
             Register(new Handlers.SendCodeToRevitHandler());
             Register(new Handlers.OpenModelHandler());
+            Register(new Handlers.ListRecentModelsHandler());
             // Phase 7: Views & Sheets
             Register(new Handlers.CreateViewHandler());
             Register(new Handlers.PlaceViewOnSheetHandler());
@@ -146,6 +149,8 @@ namespace RvtMcp.Plugin
             Register(new Handlers.AssignRevisionToSheetHandler());
             Register(new Handlers.ListRevisionsHandler());
             Register(new Handlers.RenumberSheetsHandler());
+            Register(new Handlers.GetViewportGeometryHandler());
+            Register(new Handlers.AlignViewportsHandler());
 
             // Wave 6: Materials
             Register(new Handlers.ListMaterialsHandler());
@@ -270,14 +275,6 @@ namespace RvtMcp.Plugin
             Register(new Handlers.SetViewScaleHandler());
             Register(new Handlers.ActivateViewHandler());
             Register(new Handlers.ShowElementInViewHandler());
-
-            // KEI project SQLite via Revit process (WAL-safe). Agents write
-            // project data here so BIM delivery can be AI-assisted without
-            // fighting Revit's exclusive SQLite handle from an external process.
-            Register(new Handlers.ImportProjectEquipmentHandler());
-            Register(new Handlers.QueryKeiDatabaseHandler());
-            Register(new Handlers.WriteKeiDatabaseHandler());
-            Register(new Handlers.GetActiveProjectDbHandler());
 
             // A6 batch execution — needs dispatcher ref to look up sub-commands
             Register(new Handlers.BatchExecuteHandler(this));

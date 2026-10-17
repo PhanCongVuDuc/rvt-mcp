@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 using RvtMcp.Plugin;
 using RvtMcp.Plugin.Localization;
@@ -67,6 +68,8 @@ namespace RvtMcp.Plugin.Views.Toast
                     return BuildAiFilterSuccess(category, result);
                 case "get_selected_elements":
                     return BuildSelectedSuccess(category, result);
+                case "survey_change_impact":
+                    return BuildSurveySuccess(category, result);
                 case "send_code_to_revit":
                     return BuildSendCodeSuccess(category, result);
                 default:
@@ -100,8 +103,6 @@ namespace RvtMcp.Plugin.Views.Toast
             var detailParts = new System.Collections.Generic.List<string>();
             if (viewId.HasValue)
                 detailParts.Add(L.T("toast.capture.viewId", ("viewId", viewId.Value)));
-            if (thumb != null)
-                detailParts.Add(L.T("toast.capture.clickToOpen"));
             var detail = string.Join(" · ", detailParts);
             return new ToastContent(category, summary, detail, thumb);
         }
@@ -203,9 +204,23 @@ namespace RvtMcp.Plugin.Views.Toast
 
         private static ToastContent BuildSendCodeSuccess(string category, JObject result)
         {
-            var text = result?.Value<string>("result");
-            var summary = string.IsNullOrWhiteSpace(text) ? L.T("toast.sendCode.finished") : Truncate(FirstLine(text), 100);
+            var value = result?["result"];
+            var text = value is JObject obj ? L.T("toast.generic.fields", ("count", obj.Count))
+                : value is JArray array ? L.T("toast.generic.items", ("count", array.Count))
+                : value?.Value<string>();
+            var summary = string.IsNullOrWhiteSpace(text) ? L.T("toast.sendCode.finished")
+                : Truncate(FirstLine(ToastActivityEntry.Redact(text)), 100);
             return new ToastContent(category, summary, L.T("toast.sendCode.detail"));
+        }
+
+        private static ToastContent BuildSurveySuccess(string category, JObject result)
+        {
+            var relations = result?["relations"] as JArray;
+            // Missing/truncated fields are not proof that the supported checks completed.
+            var complete = result?.Value<bool?>("complete") == true && relations?.Count == 10
+                && relations.All(relation => relation is JObject obj && obj.Value<string>("coverage") == "complete");
+            return new ToastContent(category, L.T(complete ? "toast.survey.complete" : "toast.survey.partial"),
+                L.T("toast.survey.review"));
         }
 
         private static ToastContent BuildGenericSuccess(string category, string toolName, JObject result)
@@ -274,7 +289,7 @@ namespace RvtMcp.Plugin.Views.Toast
             return string.Join(" · ", parts);
         }
 
-        internal static bool IsSafeImagePath(string path)
+        internal static bool IsSafeImagePath(string path, string tempDirectory = null, string capturesDirectory = null)
         {
             if (string.IsNullOrWhiteSpace(path))
                 return false;
@@ -292,7 +307,8 @@ namespace RvtMcp.Plugin.Views.Toast
                 if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
                     return false;
 
-                return PathAllowlist.IsUnderTempOrCaptures(full);
+                return PathAllowlist.IsUnderTempOrCaptures(full, tempDirectory ?? PathAllowlist.TempDirectory,
+                    capturesDirectory ?? PathAllowlist.CapturesDirectory);
             }
             catch
             {
@@ -308,12 +324,7 @@ namespace RvtMcp.Plugin.Views.Toast
             return idx < 0 ? text : text.Substring(0, idx);
         }
 
-        private static string Truncate(string text, int max)
-        {
-            if (string.IsNullOrEmpty(text) || text.Length <= max)
-                return text ?? string.Empty;
-            return text.Substring(0, max - 3) + "...";
-        }
+        private static string Truncate(string text, int max) => ToastActivityEntry.Compact(text, max);
 
         private readonly struct ToastContent
         {

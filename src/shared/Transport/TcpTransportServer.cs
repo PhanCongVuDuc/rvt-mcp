@@ -5,17 +5,31 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using RvtMcp.ToolCatalog;
 
 namespace RvtMcp.Plugin
 {
     public class TcpTransportServer : ITransportServer
     {
+        private readonly string _discoveryDirectory;
+        private readonly Action<string> _log;
+        private readonly ManualResetEvent _stop = new ManualResetEvent(false);
+        private readonly object _clientGate = new object();
         private TcpListener _listener;
         private Thread _listenThread;
         private volatile bool _running;
+        private int _stopped;
         private Action<string, TaskCompletionSource<string>> _onRequest;
         private int _port;
         private volatile bool _clientConnected;
+        private TcpClient _activeClient;
+        private DiscoveryPublisher _publisher;
+
+        public TcpTransportServer(string discoveryDirectory = null, Action<string> log = null)
+        {
+            _discoveryDirectory = discoveryDirectory;
+            _log = log;
+        }
 
         public bool IsRunning => _running;
         public int Port => _port;
@@ -36,7 +50,7 @@ namespace RvtMcp.Plugin
             _listener.Start();
             _port = ((IPEndPoint)_listener.LocalEndpoint).Port;
 
-            AuthToken.GenerateAndPersist(_port);
+            _publisher = AuthToken.GenerateAndPersist(_port, _discoveryDirectory);
             if (allowLan)
             {
                 const string warn = "[RvtMcp] \u26A0 LAN bind enabled. Token auth active but network exposed.";
@@ -65,9 +79,19 @@ namespace RvtMcp.Plugin
 
         public void Stop()
         {
+            if (Interlocked.Exchange(ref _stopped, 1) != 0)
+                return;
             _running = false;
+            _stop.Set();
+            lock (_clientGate) { try { _activeClient?.Close(); } catch { } }
             try { _listener?.Stop(); } catch { }
-            AuthToken.DeleteDiscoveryFile();
+
+            if (_listenThread != null && Thread.CurrentThread != _listenThread)
+                _listenThread.Join(2000);
+
+            try { _publisher?.Dispose(); } catch { }
+            _publisher = null;
+
             Log("Stopped");
         }
 
@@ -78,12 +102,16 @@ namespace RvtMcp.Plugin
 
         private void ListenLoop()
         {
+            var backoffMs = 100;
             while (_running)
             {
                 TcpClient client = null;
+                var hadClient = false;
                 try
                 {
                     client = _listener.AcceptTcpClient();
+                    hadClient = true;
+                    backoffMs = 100; // a successful connection resets the error back-off
                     Log("Client connected");
                     HandleClient(client);
                 }
@@ -95,11 +123,15 @@ namespace RvtMcp.Plugin
                 catch (Exception ex)
                 {
                     Log($"Listen error: {ex.Message}");
+                    if (_stop.WaitOne(backoffMs))
+                        break;
+                    backoffMs = Math.Min(backoffMs * 2, 2000);
                 }
                 finally
                 {
                     try { client?.Close(); } catch { }
-                    Log("Client disconnected");
+                    if (hadClient)
+                        Log("Client disconnected");
                 }
             }
         }
@@ -108,6 +140,8 @@ namespace RvtMcp.Plugin
         {
             client.ReceiveTimeout = 120000;
             _clientConnected = true;
+            lock (_clientGate) { _activeClient = client; }
+            var conn = ToolCatalogStore.BeginConnection();
             try
             {
                 var stream = client.GetStream();
@@ -180,6 +214,24 @@ namespace RvtMcp.Plugin
                     string id = request.Value<string>("id");
                     string command = request.Value<string>("command");
                     string paramsJson = request["params"]?.ToString() ?? "{}";
+                    int? timeoutSeconds = request.Value<int?>("timeout_seconds");
+
+                    // Internal server -> plugin handshake messages are consumed here,
+                    // after token auth and before rate limiting or the Revit callback.
+                    // They must never enter history, usage, toast, or ExternalEvent.
+                    if (string.Equals(command, "set_tool_catalog", StringComparison.Ordinal))
+                    {
+                        var catalogResult = ToolCatalogStore.AcceptJson(paramsJson, conn);
+                        var catalogResponse = new Newtonsoft.Json.Linq.JObject
+                        {
+                            ["id"] = id,
+                            ["success"] = catalogResult.IsValid
+                        };
+                        if (!catalogResult.IsValid)
+                            catalogResponse["error"] = catalogResult.Error;
+                        try { writer.WriteLine(catalogResponse.ToString(Newtonsoft.Json.Formatting.None)); } catch { break; }
+                        continue;
+                    }
 
                     // Create TCS and invoke callback
                     var tcs = new TaskCompletionSource<string>();
@@ -207,7 +259,8 @@ namespace RvtMcp.Plugin
                     LastCommandTime = DateTime.Now;
                     _onRequest(line, tcs);
 
-                    var response = RequestWait.WaitOrTimeout(tcs, id);
+                    var response = RequestWait.WaitOrTimeout(tcs, id,
+                        timeoutSeconds.HasValue ? TimeSpan.FromSeconds(timeoutSeconds.Value) : (TimeSpan?)null);
 
                     try
                     {
@@ -222,6 +275,8 @@ namespace RvtMcp.Plugin
             finally
             {
                 _clientConnected = false;
+                lock (_clientGate) { _activeClient = null; }
+                ToolCatalogStore.Clear(conn);
             }
         }
 
@@ -246,9 +301,15 @@ namespace RvtMcp.Plugin
 
         private void Log(string message)
         {
+            if (_log != null) { try { _log(message); } catch { } return; }
+            FileLog(message);
+        }
+
+        private static void FileLog(string message)
+        {
             try
             {
-                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RvtMcp");
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Bimwright", "rvt-mcp");
                 Directory.CreateDirectory(dir);
                 var logFile = Path.Combine(dir, "revit-mcp.log");
                 File.AppendAllText(logFile, $"[{DateTime.Now:HH:mm:ss}] [TcpTransportServer] {SecretMasker.Mask(message)}\n");

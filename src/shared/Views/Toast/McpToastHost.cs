@@ -7,6 +7,20 @@ namespace RvtMcp.Plugin.Views.Toast
 {
     public sealed class McpToastHost
     {
+        /// <summary>
+        /// The state machine is owned by the host so the notifier and the WPF manager
+        /// always reconcile the same card, even when a render is posted from another
+        /// thread.  It is deliberately independent of WPF and uses its monotonic clock.
+        /// </summary>
+        internal ActivityAggregator Aggregator { get; }
+
+        public McpToastHost(Func<int> idleSeconds = null)
+        {
+            // The provider is read when an activity card re-arms, so a Settings apply
+            // takes effect on the next tool result without rebuilding the host.
+            Aggregator = new ActivityAggregator(idleSeconds ?? (() => ActivityAggregator.DefaultIdleSeconds));
+        }
+
         private readonly object _lock = new object();
         private Thread _thread;
         private volatile Dispatcher _dispatcher;
@@ -16,6 +30,64 @@ namespace RvtMcp.Plugin.Views.Toast
         private bool _shutdownRequested;
         private bool _usesDedicatedThread;
         private Application _toastApplication;
+        private Func<bool> _frameUsable = () => true;
+        private Action<long> _activityClick = _ => { };
+        private volatile bool _showBranding;
+        private volatile ToastPositionOptions _positionOptions = new ToastPositionOptions();
+        private volatile string _instanceIdentity;
+
+        /// <summary>Raised on the toast thread after a drag release was saved; the argument is the save result.</summary>
+        public event Action<bool> PositionSaved;
+
+        /// <summary>Corner, drag and offset preferences. App restores the saved ones at startup.</summary>
+        public ToastPositionOptions PositionOptions => _positionOptions;
+
+        public void SetPositionOptions(ToastPositionOptions options)
+        {
+            _positionOptions = options ?? new ToastPositionOptions();
+            PostToManager(manager => manager.ApplyPosition());
+        }
+
+        private void SaveDraggedPosition(ToastPositionOptions options)
+        {
+            _positionOptions = options;
+            string error;
+            var saved = RvtMcpConfig.TrySaveToastPosition(options, out error);
+            if (!saved)
+                App.DebugLog("Toast position save failed: " + error);
+            PositionSaved?.Invoke(saved);
+        }
+
+        /// <summary>
+        /// Wordmark and product prefix on the activity card. Off by default.
+        /// App restores the saved preference at startup; Settings applies and saves changes.
+        /// </summary>
+        public bool ShowBranding => _showBranding;
+
+        public void SetShowBranding(bool show)
+        {
+            _showBranding = show;
+            PostToManager(manager => manager.ApplyShowBranding());
+        }
+
+        /// <summary>
+        /// Card title naming this instance (e.g. "rvt-mcp 2027"). Read when each
+        /// card is created, so a late or changed value applies to the next card.
+        /// </summary>
+        public void SetInstanceIdentity(string identity)
+        {
+            _instanceIdentity = string.IsNullOrWhiteSpace(identity) ? null : identity;
+        }
+
+        internal void SetFrameUsableProvider(Func<bool> provider)
+        {
+            _frameUsable = provider ?? (() => true);
+        }
+
+        internal void SetActivityClickHandler(Action<long> handler)
+        {
+            _activityClick = handler ?? (_ => { });
+        }
 
         public void SetHostDispatcher(Dispatcher dispatcher)
         {
@@ -45,7 +117,8 @@ namespace RvtMcp.Plugin.Views.Toast
                 if (hostDispatcher != null)
                 {
                     _dispatcher = hostDispatcher;
-                    _manager = new McpToastManager(_dispatcher);
+                    _manager = new McpToastManager(_dispatcher, Aggregator, () => _frameUsable(), id => _activityClick(id), () => _showBranding, () => _instanceIdentity,
+                        positionOptions: () => _positionOptions, positionChanged: SaveDraggedPosition);
                     if (_ownerHandle != IntPtr.Zero)
                         _manager.SetOwnerHandle(_ownerHandle);
                     _usesDedicatedThread = false;
@@ -69,7 +142,8 @@ namespace RvtMcp.Plugin.Views.Toast
                         }
 
                         _dispatcher = Dispatcher.CurrentDispatcher;
-                        _manager = new McpToastManager(_dispatcher);
+                        _manager = new McpToastManager(_dispatcher, Aggregator, () => _frameUsable(), id => _activityClick(id), () => _showBranding, () => _instanceIdentity,
+                        positionOptions: () => _positionOptions, positionChanged: SaveDraggedPosition);
                         if (_ownerHandle != IntPtr.Zero)
                             _manager.SetOwnerHandle(_ownerHandle);
                     }
@@ -147,7 +221,6 @@ namespace RvtMcp.Plugin.Views.Toast
             if (_shutdownRequested && !synchronous)
                 return;
 
-            EnsureStarted();
             var dispatcher = _dispatcher;
             var manager = _manager;
             if (dispatcher == null || manager == null || dispatcher.HasShutdownStarted)
@@ -183,6 +256,22 @@ namespace RvtMcp.Plugin.Views.Toast
             // Close windows before flipping the shutdown flag so DismissAll can still run.
             DismissAll(synchronous: true);
 
+            var manager = _manager;
+            if (manager != null)
+            {
+                try
+                {
+                    // Unsubscribing is thread-safe and must still happen if the
+                    // dispatcher has already started shutting down. Dispose stops
+                    // the timer only when called on its owning dispatcher.
+                    manager.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    App.DebugLog("McpToastHost localization cleanup failed: " + ex.Message);
+                }
+            }
+
             lock (_lock)
             {
                 _shutdownRequested = true;
@@ -191,13 +280,13 @@ namespace RvtMcp.Plugin.Views.Toast
             if (!_usesDedicatedThread)
                 return;
 
-            var dispatcher = _dispatcher;
-            if (dispatcher == null || dispatcher.HasShutdownStarted)
+            var dedicatedDispatcher = _dispatcher;
+            if (dedicatedDispatcher == null || dedicatedDispatcher.HasShutdownStarted)
                 return;
 
             try
             {
-                dispatcher.InvokeShutdown();
+                dedicatedDispatcher.InvokeShutdown();
             }
             catch
             {

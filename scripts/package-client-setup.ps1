@@ -140,6 +140,7 @@ foreach ($zip in $pluginZips) {
 
 Copy-Item -Path (Join-Path $RepoRoot 'scripts\install.ps1') -Destination (Join-Path $stageRoot 'install.ps1') -Force
 Copy-Item -Path (Join-Path $RepoRoot 'AGENTS.md') -Destination (Join-Path $stageRoot 'AGENTS.md') -Force
+Copy-Item -Path (Join-Path $RepoRoot 'CHANGELOG.md') -Destination (Join-Path $stageRoot 'CHANGELOG.md') -Force
 Copy-Item -Path (Join-Path $RepoRoot 'scripts\uninstall-all.ps1') -Destination (Join-Path $stageRoot 'uninstall.ps1') -Force
 Copy-Item -Path (Join-Path $RepoRoot 'scripts\uninstall-all.ps1') -Destination (Join-Path $stageRoot 'uninstall-all.ps1') -Force
 
@@ -211,9 +212,14 @@ if (Test-Path $setupZip) {
 }
 Compress-Archive -Path (Join-Path $stageRoot '*') -DestinationPath $setupZip -Force
 
+# Checksum sidecar for the GitHub Release: "<sha256>  <file name>", the same form as the family's .mcpb files.
+$setupHash = Get-Sha256Lower -Path $setupZip
+Set-Content -LiteralPath "$setupZip.sha256" -Value ("{0}  {1}" -f $setupHash, (Split-Path -Leaf $setupZip)) -Encoding ascii -NoNewline
+
 Write-Host ""
 Write-Host "=== client setup package summary ==="
 Write-Host ("Output : {0}" -f $setupZip)
+Write-Host ("SHA-256: {0}  ({1})" -f $setupHash, (Split-Path -Leaf "$setupZip.sha256"))
 Write-Host ("Server : {0}" -f (Get-RelativePackagePath -Root $stageRoot -Path $friendlyServerExe))
 Write-Host ("Plugins: {0}" -f ($pluginManifest.Count))
 Write-Host ("Files  : {0}" -f ($fileManifest.Count + 1))

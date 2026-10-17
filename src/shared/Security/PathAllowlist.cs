@@ -12,7 +12,7 @@ namespace RvtMcp.Plugin
         public static string CapturesDirectory =>
             Path.GetFullPath(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "RvtMcp",
+                "Bimwright", "rvt-mcp",
                 "captures"));
 
         public static string TempDirectory => Path.GetFullPath(Path.GetTempPath());
@@ -42,8 +42,9 @@ namespace RvtMcp.Plugin
 
         public static bool IsUnderTempOrCaptures(string fullPath)
         {
-            return IsUnderRoot(fullPath, TempDirectory)
-                || IsUnderRoot(fullPath, CapturesDirectory);
+            return IsUnderTempOrCaptures(fullPath, TempDirectory, CapturesDirectory);
         }
+        internal static bool IsUnderTempOrCaptures(string fullPath, string tempDirectory, string capturesDirectory)
+            => IsUnderRoot(fullPath, tempDirectory) || IsUnderRoot(fullPath, capturesDirectory);
     }
 }

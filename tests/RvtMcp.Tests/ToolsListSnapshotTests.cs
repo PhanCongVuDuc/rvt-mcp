@@ -29,24 +29,7 @@ namespace RvtMcp.Tests
         {
             var captured = CaptureToolsList(AllToolsetsConfig(enableAdaptiveBake: false));
 
-            var update = Environment.GetEnvironmentVariable("UPDATE_SNAPSHOTS") == "1";
-            var goldenExists = File.Exists(GoldenPath);
-
-            if (update || !goldenExists)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(GoldenPath)!);
-                File.WriteAllText(GoldenPath, captured);
-                if (!goldenExists)
-                {
-                    Console.Error.WriteLine(
-                        $"[ToolsListSnapshot] Golden file bootstrapped at {GoldenPath}. " +
-                        "Please commit it.");
-                }
-                return;
-            }
-
-            var expected = File.ReadAllText(GoldenPath);
-            Assert.Equal(expected.ReplaceLineEndings("\n"), captured.ReplaceLineEndings("\n"));
+            SnapshotSerializer.VerifyGolden(GoldenPath, captured, "ToolsListSnapshot");
         }
 
         [Fact]
@@ -58,24 +41,7 @@ namespace RvtMcp.Tests
                 Toolsets = new System.Collections.Generic.List<string> { "all" }
             });
 
-            var update = Environment.GetEnvironmentVariable("UPDATE_SNAPSHOTS") == "1";
-            var goldenExists = File.Exists(AdaptiveGoldenPath);
-
-            if (update || !goldenExists)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(AdaptiveGoldenPath)!);
-                File.WriteAllText(AdaptiveGoldenPath, captured);
-                if (!goldenExists)
-                {
-                    Console.Error.WriteLine(
-                        $"[ToolsListSnapshot] Adaptive golden file bootstrapped at {AdaptiveGoldenPath}. " +
-                        "Please commit it.");
-                }
-                return;
-            }
-
-            var expected = File.ReadAllText(AdaptiveGoldenPath);
-            Assert.Equal(expected.ReplaceLineEndings("\n"), captured.ReplaceLineEndings("\n"));
+            SnapshotSerializer.VerifyGolden(AdaptiveGoldenPath, captured, "ToolsListSnapshot");
         }
 
         [Fact]
@@ -86,24 +52,7 @@ namespace RvtMcp.Tests
                 Toolsets = new System.Collections.Generic.List<string> { "structural" }
             });
 
-            var update = Environment.GetEnvironmentVariable("UPDATE_SNAPSHOTS") == "1";
-            var goldenExists = File.Exists(StructuralGoldenPath);
-
-            if (update || !goldenExists)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(StructuralGoldenPath)!);
-                File.WriteAllText(StructuralGoldenPath, captured);
-                if (!goldenExists)
-                {
-                    Console.Error.WriteLine(
-                        $"[ToolsListSnapshot] Structural golden file bootstrapped at {StructuralGoldenPath}. " +
-                        "Please commit it.");
-                }
-                return;
-            }
-
-            var expected = File.ReadAllText(StructuralGoldenPath);
-            Assert.Equal(expected.ReplaceLineEndings("\n"), captured.ReplaceLineEndings("\n"));
+            SnapshotSerializer.VerifyGolden(StructuralGoldenPath, captured, "ToolsListSnapshot");
         }
 
         [Fact]
@@ -122,6 +71,7 @@ namespace RvtMcp.Tests
             var captured = CaptureToolsList(new RvtMcpConfig());
 
             Assert.Contains("\"name\": \"revit_send_code_to_revit\"", captured);
+            Assert.Contains("\"name\": \"revit_list_recent_models\"", captured);
             Assert.Contains("\"name\": \"revit_batch_execute\"", captured);
             Assert.DoesNotContain("\"name\": \"revit_list_baked_tools\"", captured);
             Assert.DoesNotContain("\"name\": \"revit_run_baked_tool\"", captured);
@@ -132,7 +82,7 @@ namespace RvtMcp.Tests
             Assert.DoesNotContain("\"name\": \"revit_dismiss_bake_suggestion\"", captured);
 
             var count = (int)Newtonsoft.Json.Linq.JObject.Parse(captured)["tool_count"]!;
-            Assert.Equal(41, count);
+            Assert.Equal(46, count);
         }
 
         [Fact]
@@ -144,10 +94,10 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
-        public void Disable_toolbaker_hides_send_code_even_with_meta()
+        public void Send_code_has_an_independent_switch_from_toolbaker()
         {
             var captured = CaptureToolsList(new RvtMcpConfig { EnableToolbaker = false });
-            Assert.DoesNotContain("\"name\": \"revit_send_code_to_revit\"", captured);
+            Assert.Contains("\"name\": \"revit_send_code_to_revit\"", captured);
             Assert.Contains("\"name\": \"revit_batch_execute\"", captured);
         }
 
@@ -201,6 +151,7 @@ namespace RvtMcp.Tests
             var text = (string)(field!.GetRawConstantValue() ?? field.GetValue(null)!);
             var bytes = System.Text.Encoding.UTF8.GetByteCount(text);
             Assert.True(bytes <= 2048, $"ServerInstructionsText is {bytes} UTF-8 bytes (Anthropic Tool Search cap is 2048).");
+            Assert.Contains("revit_change prompt", text);
         }
 
         [Fact]
@@ -247,7 +198,8 @@ namespace RvtMcp.Tests
 
             var tools = toolClasses
                 .SelectMany(cls => cls.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
-                    .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() != null))
+                    .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() != null)
+                    .Where(m => !config.ReadOnlyOrDefault || m.GetCustomAttribute<McpServerToolAttribute>()!.ReadOnly))
                 .Select(ToToolMetadata)
                 .ToArray();
 
@@ -280,7 +232,7 @@ namespace RvtMcp.Tests
                 })
                 .ToArray();
 
-            return new
+            var metadata = Newtonsoft.Json.Linq.JObject.FromObject(new
             {
                 name,
                 description_hash = SnapshotSerializer.HashDescription(description),
@@ -290,7 +242,11 @@ namespace RvtMcp.Tests
                     properties = parameters.ToDictionary(p => p.name!, p => new { type = p.type, description = p.description }),
                     required = parameters.Where(p => p.required).Select(p => p.name).ToArray()
                 }
-            };
+            });
+            var annotations = McpServerTool.Create(method, (object)null).ProtocolTool.Annotations;
+            if (annotations != null) metadata["annotations"] = Newtonsoft.Json.Linq.JObject.Parse(
+                System.Text.Json.JsonSerializer.Serialize(annotations, ModelContextProtocol.McpJsonUtilities.DefaultOptions));
+            return metadata;
         }
 
         private static string ToSnakeCase(string pascal)

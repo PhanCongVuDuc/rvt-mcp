@@ -3,6 +3,7 @@ using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
 using RvtMcp.Plugin.Views;
 using RvtMcp.Plugin.Views.Toast;
+using RvtMcp.Plugin.Views.Settings;
 
 namespace RvtMcp.Plugin
 {
@@ -19,7 +20,18 @@ namespace RvtMcp.Plugin
         public RvtMcpConfig Config { get; private set; }
         public McpEventHandler EventHandler => _handler;
         public ExternalEvent ExternalEvent => _externalEvent;
-        public bool ToastEnabled { get; set; }
+        private bool _toastEnabled;
+        public event EventHandler ToastEnabledChanged;
+        public bool ToastEnabled
+        {
+            get => _toastEnabled;
+            set
+            {
+                if (_toastEnabled == value) return;
+                _toastEnabled = value;
+                ToastEnabledChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
         public McpToastNotifier ToastNotifier { get; private set; }
 
         private McpEventHandler _handler;
@@ -28,8 +40,11 @@ namespace RvtMcp.Plugin
         private IdlingUpdater _idlingUpdater;
         private HistoryWindow _historyWindow;
         private BakeInboxWindow _bakeInboxWindow;
+        private SettingsWindow _settingsWindow;
         private UIControlledApplication _ribbonApplication;
         private bool _mainWindowCaptured;
+        private System.Windows.Threading.Dispatcher _revitDispatcher;
+        private Update.UpdateNoticeCoordinator _updateNotice;
 
         public Result OnStartup(UIControlledApplication application)
         {
@@ -39,12 +54,14 @@ namespace RvtMcp.Plugin
             DebugLog("OnStartup: BEGIN");
 
             McpLogger.Initialize();
-            LegacyDataMigration.MigrateOnce();
+            if (!LegacyDataMigration.TryMigrateOnce(DebugLog)) return Result.Failed;
             SessionLog = new McpSessionLog();
             Config = RvtMcpConfig.Load(args: null);
             Localization.LocalizationHost.InitializePlugin(
                 application.ControlledApplication.Language.ToString(), Config.UiLanguage, DebugLog);
             ToastEnabled = Config.EnableToastOrDefault;
+            _updateNotice = new Update.UpdateNoticeCoordinator(DebugLog);
+            _updateNotice.Start();
             DebugLog("OnStartup: McpLogger + SessionLog OK");
 
             BakedToolRuntimeCache = new ToolBaker.BakedToolRuntimeCache();
@@ -52,10 +69,16 @@ namespace RvtMcp.Plugin
             BakedToolRegistry = new ToolBaker.BakedToolRegistry();
             _dispatcher.LoadBakedTools(BakedToolRegistry);
             DebugLog("OnStartup: BakedToolRegistry loaded");
-            var toastHost = new McpToastHost();
+            var toastHost = new McpToastHost(() => Config?.ToastIdleSecondsOrDefault ?? RvtMcpConfig.DefaultToastIdleSeconds);
+            toastHost.SetShowBranding(Config.ShowBrandingOrDefault);
+            toastHost.SetPositionOptions(Config.ToastPositionOrDefault);
             ToastNotifier = new McpToastNotifier(toastHost, () => ToastEnabled);
             _handler = new McpEventHandler(_dispatcher, SessionLog, ToastNotifier);
             _externalEvent = ExternalEvent.Create(_handler);
+            application.ControlledApplication.DocumentChanged += McpChangeTracker.OnDocumentChanged;
+            application.ViewActivated += Survey.SurveyHistoryBridge.Invalidate;
+            application.ControlledApplication.DocumentClosing += Survey.SurveyHistoryBridge.Invalidate;
+            application.ControlledApplication.DocumentSavedAs += Survey.SurveyHistoryBridge.Invalidate;
             DebugLog("OnStartup: Dispatcher + EventHandler + ExternalEvent OK");
 
             CreateAndStartTransport();
@@ -74,10 +97,16 @@ namespace RvtMcp.Plugin
 
         public Result OnShutdown(UIControlledApplication application)
         {
+            application.ControlledApplication.DocumentChanged -= McpChangeTracker.OnDocumentChanged;
+            application.ViewActivated -= Survey.SurveyHistoryBridge.Invalidate;
+            application.ControlledApplication.DocumentClosing -= Survey.SurveyHistoryBridge.Invalidate;
+            application.ControlledApplication.DocumentSavedAs -= Survey.SurveyHistoryBridge.Invalidate;
             application.Idling -= OnIdling;
             Localization.LocalizationHost.ShutdownPlugin();
             _historyWindow?.Close();
             _bakeInboxWindow?.Close();
+            _settingsWindow?.CloseForShutdown();
+            _updateNotice?.Shutdown();
 
             StopTransport();
             _handler?.CancelAll();
@@ -115,6 +144,8 @@ namespace RvtMcp.Plugin
                     Id = request.Value<string>("id"),
                     CommandName = request.Value<string>("command"),
                     ParamsJson = request["params"]?.ToString() ?? "{}",
+                    RuntimeOptions = request["runtime"]?.ToObject<RvtMcpConfig>(),
+                    History = request["history"]?.ToObject<ChangeHistoryRequest>(),
                     Tcs = tcs
                 };
 
@@ -153,6 +184,28 @@ namespace RvtMcp.Plugin
             }
         }
 
+        public void ShowOrFocusSettingsWindow(SettingsTab initialTab = SettingsTab.General)
+        {
+            if (_settingsWindow == null || !_settingsWindow.IsLoaded)
+            {
+                _settingsWindow = new SettingsWindow(this, initialTab);
+                var hwnd = _ribbonApplication?.MainWindowHandle ?? IntPtr.Zero;
+                if (hwnd != IntPtr.Zero) new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Owner = hwnd;
+                _settingsWindow.Show();
+            }
+            else
+            {
+                _settingsWindow.SelectTab(initialTab);
+                if (!_settingsWindow.IsVisible) _settingsWindow.Show();
+                _settingsWindow.Activate();
+            }
+        }
+
+        public void FocusSettingsLanguage()
+        {
+            _settingsWindow?.FocusLanguage();
+        }
+
         public void ShowOrFocusBakeInboxWindow()
         {
             if (_bakeInboxWindow == null || !_bakeInboxWindow.IsLoaded)
@@ -167,11 +220,27 @@ namespace RvtMcp.Plugin
             ToastNotifier?.SetOwnerHandle(hwnd);
             try
             {
-                var dispatcher = System.Windows.Application.Current?.Dispatcher
-                    ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
-                ToastNotifier?.SetHostDispatcher(dispatcher);
+                _revitDispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+                ToastNotifier?.SetHostDispatcher(_revitDispatcher);
             }
             catch { }
+        }
+
+        /// <summary>Open History on Revit's UI dispatcher when called by the toast window.</summary>
+        public void ShowOrFocusHistoryWindowFromToast()
+        {
+            var dispatcher = _revitDispatcher;
+            if (dispatcher == null)
+            {
+                DebugLog("Toast history click ignored: Revit dispatcher is not captured.");
+                return;
+            }
+
+            if (dispatcher.CheckAccess())
+                ShowOrFocusHistoryWindow();
+            else
+                dispatcher.BeginInvoke(new Action(ShowOrFocusHistoryWindow),
+                    System.Windows.Threading.DispatcherPriority.Normal);
         }
 
         public void RefreshBakedRibbonButtons()
@@ -193,6 +262,7 @@ namespace RvtMcp.Plugin
                     _mainWindowCaptured = true;
                 }
             }
+            _updateNotice?.OnIdling(_ribbonApplication?.MainWindowHandle ?? IntPtr.Zero);
             _idlingUpdater?.Update(IsTransportRunning, Transport, SessionLog, ToastEnabled);
         }
 
@@ -202,7 +272,7 @@ namespace RvtMcp.Plugin
             {
                 var dir = System.IO.Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "RvtMcp");
+                    "Bimwright", "rvt-mcp");
                 System.IO.Directory.CreateDirectory(dir);
                 var logFile = System.IO.Path.Combine(dir, "debug.log");
                 System.IO.File.AppendAllText(logFile,

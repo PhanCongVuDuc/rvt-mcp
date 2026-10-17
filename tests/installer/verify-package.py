@@ -21,16 +21,22 @@ def digest(data):
     return hashlib.sha256(data).hexdigest().upper()
 
 
+def verify_checksum_sidecar(package, actual_sha256):
+    parts = Path(str(package) + '.sha256').read_text(encoding='ascii').split()
+    assert len(parts) == 2 and parts[1] == package.name, 'Setup checksum sidecar filename/format mismatch'
+    assert parts[0].upper() == actual_sha256, 'Setup ZIP checksum mismatch'
+
+
 def safe_path(name):
     path = PurePosixPath(name.replace("\\", "/"))
     assert not path.is_absolute() and ".." not in path.parts and not PureWindowsPath(name).drive, name
 
 
 class Client:
-    def __init__(self, exe, log, args):
+    def __init__(self, exe, log, args, env=None):
         self.log = log.open("w", encoding="utf-8")
         self.proc = subprocess.Popen([str(exe), *args], stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=self.log, text=True, encoding="utf-8",
+            stdout=subprocess.PIPE, stderr=self.log, text=True, encoding="utf-8", env=env,
             creationflags=subprocess.CREATE_NO_WINDOW)
         self.messages = queue.Queue()
         self.counter = 0
@@ -69,11 +75,18 @@ class Client:
         self.log.close()
 
 
+REPO = Path(__file__).resolve().parents[2]
+
+
+def repo_json(relative):
+    return json.loads((REPO / relative).read_text(encoding="utf-8-sig"))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("zip", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--version", default="0.6.2")
+    parser.add_argument("--version", default=repo_json("server.json")["version"])
     parser.add_argument("--live-2027", action="store_true")
     args = parser.parse_args()
     package = args.zip.resolve()
@@ -82,6 +95,8 @@ def main():
     report = {"testedAtUtc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "package": package.name, "bytes": package.stat().st_size,
         "sha256": digest(package.read_bytes())}
+    verify_checksum_sidecar(package, report['sha256'])
+    report['checksumSidecarPassed'] = True
     with zipfile.ZipFile(package) as archive:
         assert archive.testzip() is None, "ZIP CRC check failed"
         for name in archive.namelist():
@@ -113,8 +128,22 @@ def main():
     exe = extraction / manifest["server"]["command"]
     report["serverExeSha256"] = digest(exe.read_bytes())
     report["smoke"] = []
-    for mode, flags, expected in (("default", [], 40), ("all", ["--toolsets", "all"], 229)):
-        client = Client(exe, package.parent / f"smoke-{mode}-stderr.log", flags + ["--target", "2027"])
+    # Package-only checks use a disposable profile. The opt-in live check needs
+    # the real profile's discovery files and retains its existing behavior.
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("BIMWRIGHT_")}
+    profile = package.parent / "smoke-profile"
+    for key, path in (("USERPROFILE", profile), ("APPDATA", profile / "AppData/Roaming"),
+                      ("LOCALAPPDATA", profile / "AppData/Local")):
+        path.mkdir(parents=True, exist_ok=True)
+        env[key] = str(path)
+    env["BIMWRIGHT_DISABLE_UPDATE_CHECK"] = "1"
+    if args.live_2027:
+        env = None
+    report["profileMode"] = "real-profile-live-opt-in" if args.live_2027 else "disposable-package-only"
+    all_count = repo_json("tests/RvtMcp.Tests/Golden/tools-list.json")["tool_count"]
+    for mode, flags, expected in (("default", ["--toolsets", "query,create,view,meta"], 46),
+                                  ("all", ["--toolsets", "all"], all_count)):
+        client = Client(exe, package.parent / f"smoke-{mode}-stderr.log", flags + ["--target", "2027"], env)
         try:
             init = client.request("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
                 "clientInfo": {"name": "setup-package-verification", "version": "1"}})
@@ -124,6 +153,10 @@ def main():
             assert len(catalog) == expected, (mode, len(catalog))
             if mode == "all":
                 tools = {t["name"]: t for t in catalog}
+                ifc = tools["revit_export_ifc"]
+                assert "timeout_seconds" in ifc["inputSchema"]["properties"]
+                assert "timeout_seconds" not in ifc["inputSchema"].get("required", [])
+                assert "default 600" in ifc["description"]
                 assert "host_id" in tools["revit_create_point_based_element"]["inputSchema"]["properties"]
                 assert {"systemTypeId", "startElementId", "startConnectorId"} <= set(
                     tools["revit_create_pipe"]["inputSchema"]["properties"])

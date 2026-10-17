@@ -6,6 +6,28 @@ using RvtMcp.Plugin;
 public class LegacyDataMigrationTests
 {
     [Fact]
+    public void MigrateOnce_FamilyRootWithSiblingDoesNotCreateProductRoot()
+    {
+        var tempLocal = Path.Combine(Path.GetTempPath(), "rvtmcp-migration-test-" + Guid.NewGuid());
+        Directory.CreateDirectory(tempLocal);
+        try
+        {
+            var sibling = Path.Combine(tempLocal, "Bimwright", "ipt-mcp", "baked");
+            Directory.CreateDirectory(sibling);
+            File.WriteAllText(Path.Combine(sibling, "tool.json"), "{}");
+
+            LegacyDataMigration.MigrateOnce(tempLocal);
+
+            Assert.False(Directory.Exists(Path.Combine(tempLocal, "Bimwright", "rvt-mcp")));
+            Assert.Equal("{}", File.ReadAllText(Path.Combine(sibling, "tool.json")));
+        }
+        finally
+        {
+            Directory.Delete(tempLocal, recursive: true);
+        }
+    }
+
+    [Fact]
     public void MigrateOnce_CopiesBakedFolderAndCreatesMarker()
     {
         // Arrange: redirect LOCALAPPDATA to temp using parameterized helper.
@@ -21,9 +43,9 @@ public class LegacyDataMigrationTests
             LegacyDataMigration.MigrateOnce(tempLocal);
 
             // Assert
-            var newBaked = Path.Combine(tempLocal, "RvtMcp", "baked", "tool1.json");
+            var newBaked = Path.Combine(tempLocal, "Bimwright", "rvt-mcp", "baked", "tool1.json");
             Assert.True(File.Exists(newBaked));
-            var marker = Path.Combine(tempLocal, "RvtMcp", ".migrated-from-bimwright");
+            var marker = Path.Combine(tempLocal, "Bimwright", "rvt-mcp", ".migrated-from-bimwright-v2");
             Assert.True(File.Exists(marker));
         }
         finally
@@ -43,10 +65,10 @@ public class LegacyDataMigrationTests
             File.WriteAllText(Path.Combine(tempLocal, "Bimwright", "baked", "tool1.json"), "{}");
 
             LegacyDataMigration.MigrateOnce(tempLocal);
-            var firstMtime = File.GetLastWriteTimeUtc(Path.Combine(tempLocal, "RvtMcp", "baked", "tool1.json"));
+            var firstMtime = File.GetLastWriteTimeUtc(Path.Combine(tempLocal, "Bimwright", "rvt-mcp", "baked", "tool1.json"));
 
             LegacyDataMigration.MigrateOnce(tempLocal);   // second call — should be no-op
-            var secondMtime = File.GetLastWriteTimeUtc(Path.Combine(tempLocal, "RvtMcp", "baked", "tool1.json"));
+            var secondMtime = File.GetLastWriteTimeUtc(Path.Combine(tempLocal, "Bimwright", "rvt-mcp", "baked", "tool1.json"));
 
             Assert.Equal(firstMtime, secondMtime);
         }

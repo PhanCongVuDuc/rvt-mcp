@@ -14,8 +14,16 @@ namespace RvtMcp.Plugin.Views.Toast
         private static readonly HashSet<string> ExactWriteCommands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "batch_execute",
+            "record_change",
+            "resolve_history_identity",
             "send_code_to_revit",
-            "run_baked_tool"
+            "run_baked_tool",
+            "capture_view_image", "get_material_takeoff", "compute_room_finishes",
+            "list_bake_suggestions", "open_model",
+            "accept_bake_suggestion", "dismiss_bake_suggestion",
+            // switch_target mutates session routing (spec §6.8 annotation ReadOnly=false);
+            // it is a server-side meta command, not a plugin command.
+            "switch_target"
         };
 
         private static readonly string[] WritePrefixes =
@@ -27,6 +35,7 @@ namespace RvtMcp.Plugin.Views.Toast
             "update_",
             "change_",
             "apply_",
+            "align_",
             "assign_",
             "tag_",
             "override_",
@@ -61,6 +70,8 @@ namespace RvtMcp.Plugin.Views.Toast
         {
             if (string.IsNullOrWhiteSpace(commandName))
                 return ToolActivityKind.Read;
+
+            if (ToolReadPolicy.IsReadOnly(commandName)) return ToolActivityKind.Read;
 
             if (ExactWriteCommands.Contains(commandName))
                 return ToolActivityKind.Write;
