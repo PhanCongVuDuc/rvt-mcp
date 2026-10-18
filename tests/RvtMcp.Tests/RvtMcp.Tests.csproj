@@ -22,6 +22,7 @@
     <Compile Include="../../src/shared/Views/Toast/ToastActivityEntry.cs" Link="ToastActivityEntry.cs" />
     <Compile Include="../../src/shared/Views/Toast/ToastActivityLog.cs" Link="ToastActivityLog.cs" />
     <Compile Include="../../src/shared/Views/Toast/ToastPlacement.cs" Link="ToastPlacement.cs" />
+    <Compile Include="../../src/shared/Views/Toast/ToastFaultGuard.cs" Link="ToastFaultGuard.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\SendCodeSourceBuilder.cs" Link="Shared\SendCodeSourceBuilder.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\LiveEntry.cs" Link="Shared\LiveEntry.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\LiveEntryResolver.cs" Link="Shared\LiveEntryResolver.cs" />

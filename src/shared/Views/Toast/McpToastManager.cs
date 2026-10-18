@@ -30,6 +30,7 @@ namespace RvtMcp.Plugin.Views.Toast
         private readonly Action<ToastPositionOptions> _positionChanged;
         private readonly Func<Tuple<ToastBounds, ToastBounds>> _geometry;
         private readonly Func<Point> _cursorPosition;
+        private readonly ToastFaultGuard _faultGuard;
         private double _compactHeight;
         private bool _growUp;
 
@@ -57,7 +58,8 @@ namespace RvtMcp.Plugin.Views.Toast
             Func<ToastPositionOptions> positionOptions = null,
             Action<ToastPositionOptions> positionChanged = null,
             Func<Tuple<ToastBounds, ToastBounds>> geometry = null,
-            Func<Point> cursorPosition = null)
+            Func<Point> cursorPosition = null,
+            ToastFaultGuard faultGuard = null)
         {
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _aggregator = aggregator ?? throw new ArgumentNullException(nameof(aggregator));
@@ -70,6 +72,7 @@ namespace RvtMcp.Plugin.Views.Toast
             _positionChanged = positionChanged;
             _geometry = geometry;
             _cursorPosition = cursorPosition;
+            _faultGuard = faultGuard ?? new ToastFaultGuard();
 
             _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
             {
@@ -174,6 +177,29 @@ namespace RvtMcp.Plugin.Views.Toast
             _aggregator.TakeRender();
         }
 
+        /// <summary>
+        /// Best-effort teardown after the host switched toasts off. Every step stands
+        /// alone, so a window that refuses to close cannot keep the timer running.
+        /// </summary>
+        public void CloseAllAfterFault()
+        {
+            try { _timer.Stop(); }
+            catch { }
+
+            var window = _window;
+            _window = null;
+            if (window != null)
+            {
+                try { window.SizeChanged -= OnWindowSizeChanged; }
+                catch { }
+                try { window.CloseImmediate(); }
+                catch { }
+            }
+
+            try { _aggregator.Reset(); }
+            catch { }
+        }
+
         /// <summary>Detach the global localization subscription before the host dies.</summary>
         public void Dispose()
         {
@@ -267,7 +293,7 @@ namespace RvtMcp.Plugin.Views.Toast
 
         private void OnTimerTick(object sender, EventArgs e)
         {
-            if (_window == null)
+            if (_window == null || _faultGuard.IsBroken)
             {
                 _timer.Stop();
                 return;
@@ -276,7 +302,7 @@ namespace RvtMcp.Plugin.Views.Toast
             bool frameUsable;
             try { frameUsable = _isFrameUsable(); }
             catch { frameUsable = true; }
-            Tick(frameUsable);
+            _faultGuard.Run(() => Tick(frameUsable));
         }
 
         private void OnLanguageChanged(object sender, EventArgs e)
@@ -287,7 +313,7 @@ namespace RvtMcp.Plugin.Views.Toast
             void Refresh()
             {
                 if (_window != null)
-                    _window.RefreshLocalization();
+                    _faultGuard.Run(_window.RefreshLocalization);
             }
 
             try
@@ -323,14 +349,14 @@ namespace RvtMcp.Plugin.Views.Toast
                 return;
 
             if (_aggregator.Dismiss(cardId))
-                Render();
+                _faultGuard.Run(Render);
         }
 
         private void OnPointerEntered(long cardId)
         {
             EnsureDispatcher();
             if (_window != null && _window.CardId == cardId && _aggregator.PointerEntered(cardId))
-                Render();
+                _faultGuard.Run(Render);
         }
 
         private void OnPointerLeft(long cardId)
@@ -365,7 +391,7 @@ namespace RvtMcp.Plugin.Views.Toast
             catch { }
 
             if (_aggregator.Dismiss(cardId))
-                Render();
+                _faultGuard.Run(Render);
         }
 
         private void EnsureTimer()

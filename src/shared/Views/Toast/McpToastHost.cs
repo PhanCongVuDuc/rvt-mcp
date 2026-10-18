@@ -35,6 +35,7 @@ namespace RvtMcp.Plugin.Views.Toast
         private volatile bool _showBranding;
         private volatile ToastPositionOptions _positionOptions = new ToastPositionOptions();
         private volatile string _instanceIdentity;
+        private readonly ToastFaultGuard _faultGuard = new ToastFaultGuard();
 
         /// <summary>Raised on the toast thread after a drag release was saved; the argument is the save result.</summary>
         public event Action<bool> PositionSaved;
@@ -118,9 +119,10 @@ namespace RvtMcp.Plugin.Views.Toast
                 {
                     _dispatcher = hostDispatcher;
                     _manager = new McpToastManager(_dispatcher, Aggregator, () => _frameUsable(), id => _activityClick(id), () => _showBranding, () => _instanceIdentity,
-                        positionOptions: () => _positionOptions, positionChanged: SaveDraggedPosition);
+                        positionOptions: () => _positionOptions, positionChanged: SaveDraggedPosition, faultGuard: _faultGuard);
                     if (_ownerHandle != IntPtr.Zero)
                         _manager.SetOwnerHandle(_ownerHandle);
+                    _dispatcher.UnhandledException += OnDispatcherUnhandledException;
                     _usesDedicatedThread = false;
                     App.DebugLog("McpToastHost: using host WPF dispatcher");
                     return;
@@ -143,9 +145,10 @@ namespace RvtMcp.Plugin.Views.Toast
 
                         _dispatcher = Dispatcher.CurrentDispatcher;
                         _manager = new McpToastManager(_dispatcher, Aggregator, () => _frameUsable(), id => _activityClick(id), () => _showBranding, () => _instanceIdentity,
-                        positionOptions: () => _positionOptions, positionChanged: SaveDraggedPosition);
+                        positionOptions: () => _positionOptions, positionChanged: SaveDraggedPosition, faultGuard: _faultGuard);
                         if (_ownerHandle != IntPtr.Zero)
                             _manager.SetOwnerHandle(_ownerHandle);
+                        _dispatcher.UnhandledException += OnDispatcherUnhandledException;
                     }
                     catch (Exception ex)
                     {
@@ -192,7 +195,7 @@ namespace RvtMcp.Plugin.Views.Toast
 
         internal void Post(Action<McpToastManager> action)
         {
-            if (_shutdownRequested || action == null)
+            if (_shutdownRequested || _faultGuard.IsBroken || action == null)
                 return;
 
             EnsureStarted();
@@ -201,7 +204,7 @@ namespace RvtMcp.Plugin.Views.Toast
 
         public void Post(Action action)
         {
-            if (_shutdownRequested || action == null)
+            if (_shutdownRequested || _faultGuard.IsBroken || action == null)
                 return;
 
             EnsureStarted();
@@ -209,7 +212,7 @@ namespace RvtMcp.Plugin.Views.Toast
             if (dispatcher == null || dispatcher.HasShutdownStarted)
                 return;
 
-            dispatcher.BeginInvoke(action);
+            dispatcher.BeginInvoke(new Action(() => _faultGuard.Run(action)));
         }
 
         /// <summary>
@@ -255,6 +258,10 @@ namespace RvtMcp.Plugin.Views.Toast
         {
             // Close windows before flipping the shutdown flag so DismissAll can still run.
             DismissAll(synchronous: true);
+
+            var hostDispatcher = _dispatcher;
+            if (hostDispatcher != null)
+                hostDispatcher.UnhandledException -= OnDispatcherUnhandledException;
 
             var manager = _manager;
             if (manager != null)
@@ -302,10 +309,10 @@ namespace RvtMcp.Plugin.Views.Toast
         {
             var dispatcher = _dispatcher;
             var manager = _manager;
-            if (dispatcher == null || manager == null || dispatcher.HasShutdownStarted)
+            if (dispatcher == null || manager == null || dispatcher.HasShutdownStarted || _faultGuard.IsBroken)
                 return;
 
-            dispatcher.BeginInvoke(new Action(() =>
+            dispatcher.BeginInvoke(new Action(() => _faultGuard.Run(() =>
             {
                 try
                 {
@@ -315,7 +322,42 @@ namespace RvtMcp.Plugin.Views.Toast
                 {
                     App.DebugLog("McpToastHost action failed: " + ex);
                 }
-            }));
+            })));
+        }
+
+        // A third-party add-in's Loaded handler can throw during our first render pass:
+        // window.Show() sends WM_SIZE, which fires every pending Loaded callback on this
+        // shared dispatcher. That exception crosses a native WndProc frame, so the catch in
+        // PostToManager never sees it and the CLR kills Revit. Claim only faults raised while
+        // toast work is on the stack and switch the toast off; leave everyone else's alone.
+        private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            var alreadyBroken = _faultGuard.IsBroken;
+            if (!_faultGuard.TryClaim())
+                return;
+
+            e.Handled = true;
+            if (alreadyBroken)
+            {
+                App.DebugLog("McpToastHost: toast fault after disable: " + e.Exception.Message);
+                return;
+            }
+
+            App.DebugLog("McpToastHost: toast disabled for this session: " + e.Exception);
+            var dispatcher = _dispatcher;
+            var manager = _manager;
+            if (dispatcher == null || manager == null)
+                return;
+
+            // Close once the faulting Show has unwound; closing inside it re-enters the same pass.
+            try
+            {
+                dispatcher.BeginInvoke(new Action(() => _faultGuard.Run(manager.CloseAllAfterFault)));
+            }
+            catch (Exception ex)
+            {
+                App.DebugLog("McpToastHost: toast close after fault failed: " + ex.Message);
+            }
         }
     }
 }
