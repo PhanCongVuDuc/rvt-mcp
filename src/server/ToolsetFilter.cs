@@ -37,7 +37,12 @@ namespace RvtMcp.Server
             var requested = config?.Toolsets;
             HashSet<string> set;
 
-            if (requested == null || requested.Count == 0)
+            if ((requested == null || requested.Count == 0) && config?.Tools?.Count > 0)
+            {
+                // A tool allowlist without toolsets: open every toolset, the allowlist does the narrowing.
+                set = new HashSet<string>(KnownToolsets, StringComparer.OrdinalIgnoreCase);
+            }
+            else if (requested == null || requested.Count == 0)
             {
                 set = new HashSet<string>(DefaultOn, StringComparer.OrdinalIgnoreCase);
             }
@@ -59,6 +64,15 @@ namespace RvtMcp.Server
                 set.Remove("toolbaker");
 
             return set;
+        }
+
+        /// <summary>The <c>--tools</c> allowlist as MCP tool names (<c>revit_</c>-prefixed), or null when unset.</summary>
+        public static HashSet<string> ToolAllowlist(RvtMcpConfig config)
+        {
+            if (config?.Tools == null || config.Tools.Count == 0) return null;
+            return new HashSet<string>(
+                config.Tools.Select(n => n.StartsWith("revit_", StringComparison.OrdinalIgnoreCase) ? n : "revit_" + n),
+                StringComparer.OrdinalIgnoreCase);
         }
     }
 }

@@ -22,6 +22,7 @@ namespace RvtMcp.Plugin
     {
         public const string EnvTarget                    = "BIMWRIGHT_TARGET";
         public const string EnvToolsets                  = "BIMWRIGHT_TOOLSETS";
+        public const string EnvTools                     = "BIMWRIGHT_TOOLS";
         public const string EnvReadOnly                  = "BIMWRIGHT_READ_ONLY";
         public const string EnvAllowLanBind              = "BIMWRIGHT_ALLOW_LAN_BIND";
         public const string EnvEnableToolbaker           = "BIMWRIGHT_ENABLE_TOOLBAKER";
@@ -59,6 +60,12 @@ namespace RvtMcp.Plugin
 
         [JsonProperty("toolsets")]
         public List<string> Toolsets { get; set; }
+
+        /// <summary>Per-tool allowlist (with or without the <c>revit_</c> prefix). When set, only these tools are
+        /// registered; with no <see cref="Toolsets"/> it implies every toolset, so a listed tool is never hidden by
+        /// toolset defaults. Read-only and send-code switches still apply on top.</summary>
+        [JsonProperty("tools")]
+        public List<string> Tools { get; set; }
 
         [JsonProperty("readOnly")]
         public bool? ReadOnly { get; set; }
@@ -398,6 +405,9 @@ namespace RvtMcp.Plugin
             var toolsets = lookup(EnvToolsets);
             if (!string.IsNullOrWhiteSpace(toolsets)) config.Toolsets = ParseCsv(toolsets);
 
+            var tools = lookup(EnvTools);
+            if (!string.IsNullOrWhiteSpace(tools)) config.Tools = ParseCsv(tools);
+
             var readOnly = ParseBool(lookup(EnvReadOnly));
             if (readOnly.HasValue) config.ReadOnly = readOnly;
 
@@ -494,6 +504,9 @@ namespace RvtMcp.Plugin
                         break;
                     case "--toolsets":
                         if (i + 1 < args.Length) config.Toolsets = ParseCsv(args[++i]);
+                        break;
+                    case "--tools":
+                        if (i + 1 < args.Length) config.Tools = ParseCsv(args[++i]);
                         break;
                     case "--read-only":
                         config.ReadOnly = true;

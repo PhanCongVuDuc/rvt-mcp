@@ -57,6 +57,9 @@ namespace RvtMcp.Server
             var config = RvtMcpConfig.Load(args);
             config.ValidateResponseLimits();
             ServerState.Config = config;
+            var unknownTools = UnknownAllowlistedTools(config);
+            if (unknownTools.Length > 0)
+                Console.Error.WriteLine("[RvtMcp] --tools names match no tool: " + string.Join(", ", unknownTools));
             ServerState.ToolCatalog = ServerToolCatalogBuilder.Build(
                 ToolsetFilter.Resolve(config), config);
             if (!string.IsNullOrWhiteSpace(config.Target))
@@ -253,6 +256,8 @@ namespace RvtMcp.Server
                 "  --toolsets <csv>        Comma list of toolsets to enable. Default: " + string.Join(",", ToolsetFilter.DefaultOn) + ".",
                 "                          Known toolsets: " + string.Join(", ", ToolsetFilter.KnownToolsets),
                 "                          Use 'all' to expose every toolset.",
+                "  --tools <csv>           Expose only these tools (names with or without 'revit_'). Without",
+                "                          --toolsets every toolset is searched; --read-only still applies.",
                 "  --read-only             Expose only tools annotated ReadOnly=true (no document/file writes).",
                 "  --enable-send-code      Expose arbitrary C# execution (default ON, independent of ToolBaker).",
                 "  --disable-send-code     Hide send_code_to_revit. --read-only also hides it.",
@@ -295,7 +300,7 @@ namespace RvtMcp.Server
                 "                          here for future cross-process propagation.)",
                 "",
                 "Env vars (override JSON, overridden by CLI):",
-                "  BIMWRIGHT_TARGET, BIMWRIGHT_TOOLSETS, BIMWRIGHT_READ_ONLY,",
+                "  BIMWRIGHT_TARGET, BIMWRIGHT_TOOLSETS, BIMWRIGHT_TOOLS, BIMWRIGHT_READ_ONLY,",
                 "  BIMWRIGHT_ALLOW_LAN_BIND, BIMWRIGHT_ENABLE_TOOLBAKER,",
                 "  BIMWRIGHT_ENABLE_SEND_CODE, BIMWRIGHT_ENABLE_CALL_LOG, BIMWRIGHT_ENABLE_RESPONSE_GUARD,",
                 "  BIMWRIGHT_RESPONSE_WARN_BYTES, BIMWRIGHT_RESPONSE_STRONG_WARN_BYTES,",
@@ -402,6 +407,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
 
         internal static IEnumerable<MethodInfo> ResolveRegisteredToolMethods(HashSet<string> enabled, RvtMcpConfig config)
         {
+            var allow = ToolsetFilter.ToolAllowlist(config);
             return ResolveRegisteredToolTypes(enabled, config)
                 .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
                 .Where(method => method.GetCustomAttribute<McpServerToolAttribute>() != null)
@@ -413,7 +419,19 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                     || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_switch_target"
                     // revit_call_addin_command stays too: it refuses an add-in command declared readOnly=false itself
                     // (AddinMetaTools.ReadOnlyRefusal) and the plugin checks again.
-                    || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_call_addin_command");
+                    || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_call_addin_command")
+                .Where(method => allow == null || allow.Contains(method.GetCustomAttribute<McpServerToolAttribute>().Name));
+        }
+
+        /// <summary>Allowlisted names that match no tool in any toolset — reported on stderr so a typo is visible.</summary>
+        internal static string[] UnknownAllowlistedTools(RvtMcpConfig config)
+        {
+            var allow = ToolsetFilter.ToolAllowlist(config);
+            if (allow == null) return Array.Empty<string>();
+            var everything = new RvtMcpConfig { Toolsets = new List<string> { "all" }, EnableAdaptiveBake = true };
+            var known = new HashSet<string>(ResolveRegisteredToolMethods(ToolsetFilter.Resolve(everything), everything)
+                .Select(m => m.GetCustomAttribute<McpServerToolAttribute>().Name), StringComparer.OrdinalIgnoreCase);
+            return allow.Where(n => !known.Contains(n)).OrderBy(n => n).ToArray();
         }
 
         internal static IMcpServerBuilder RegisterToolsets(IMcpServerBuilder mcp, HashSet<string> enabled, RvtMcpConfig config)

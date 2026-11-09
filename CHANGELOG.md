@@ -13,6 +13,9 @@
 - CLI: `rvt-mcp addin list [--target …]`, `rvt-mcp addin call <addin> <command> [--args <json>] [--target …] [--read-only]
   [--timeout <s>]` — JSON on stdout, exit 0/1/2; several Revit sessions without `--target` is an error listing them.
 - Tool counts: default **48**, `--toolsets all` **235**, adaptive bake **238**.
+- `--tools <csv>` / `BIMWRIGHT_TOOLS` / config `"tools"`: per-tool allowlist (names with or without `revit_`). Only
+  listed tools are registered; without `--toolsets` every toolset is searched, `--read-only` and `--disable-send-code`
+  still apply, and names that match no tool are reported on stderr.
 - Server runs Workstation GC (`ServerGarbageCollection=false`). `Sdk.Web` defaulted it to Server GC, one heap and GC
   thread per logical core: on a 32-core machine each stdio server idled at ~107 MB private / 51 threads, now ~37 MB /
   20 threads, and no longer keeps hundreds of MB committed after a burst.
