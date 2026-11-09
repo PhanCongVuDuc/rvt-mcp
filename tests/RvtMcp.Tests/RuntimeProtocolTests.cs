@@ -262,7 +262,7 @@ namespace RvtMcp.Tests
                 }
                 // revit_switch_target is ReadOnly=false but stays exposed under --read-only
                 // so the agent can recover the target binding (spec §6.8/§6.11).
-                if (readOnly) Assert.All(tools.Where(t => t.Name != "revit_switch_target"),
+                if (readOnly) Assert.All(tools.Where(t => t.Name != "revit_switch_target" && t.Name != "revit_call_addin_command"),
                     tool => Assert.True(tool.ProtocolTool.Annotations.ReadOnlyHint));
                 Assert.Contains(tools, tool => tool.Name == "revit_list_schedules");
                 var response = await client.CallToolAsync("revit_get_element_details",

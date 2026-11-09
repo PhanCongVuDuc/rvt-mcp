@@ -112,7 +112,7 @@ namespace RvtMcp.Tests
         {
             var full = new RvtMcpConfig { Toolsets = new List<string> { "all" }, EnableAdaptiveBake = true };
             var methods = Program.ResolveRegisteredToolMethods(ToolsetFilter.Resolve(full), full).ToArray();
-            Assert.Equal(236, methods.Length);
+            Assert.Equal(238, methods.Length);
             foreach (var method in methods)
             {
                 var attr = method.GetCustomAttribute<McpServerToolAttribute>();
@@ -138,14 +138,16 @@ namespace RvtMcp.Tests
             }
             // revit_switch_target is ReadOnly=false but stays registered under --read-only
             // so the agent can always recover the target binding (spec §6.8/§6.11).
+            // revit_call_addin_command too: it refuses an add-in command declared readOnly=false itself.
             var expected = methods.Where(m => m.GetCustomAttribute<McpServerToolAttribute>().ReadOnly
-                    || m.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_switch_target")
+                    || m.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_switch_target"
+                    || m.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_call_addin_command")
                 .Select(m => m.GetCustomAttribute<McpServerToolAttribute>().Name).OrderBy(n => n).ToArray();
             full.ReadOnly = true;
             var actual = Program.ResolveRegisteredToolMethods(ToolsetFilter.Resolve(full), full)
                 .Select(m => m.GetCustomAttribute<McpServerToolAttribute>().Name).OrderBy(n => n).ToArray();
             Assert.Equal(expected, actual);
-            Assert.Equal(expected.Where(n => n != "revit_switch_target").Select(n => n.Substring(6)).OrderBy(n => n),
+            Assert.Equal(expected.Where(n => n != "revit_switch_target" && n != "revit_call_addin_command").Select(n => n.Substring(6)).OrderBy(n => n),
                 ToolReadPolicy.ReadOnlyCommands.OrderBy(n => n));
             Assert.Contains("revit_list_schedules", actual);
             Assert.DoesNotContain("revit_capture_view_image", actual);

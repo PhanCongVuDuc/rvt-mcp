@@ -35,6 +35,13 @@ namespace RvtMcp.Server
     {
         static async Task Main(string[] args)
         {
+            // rvt-mcp addin list|call - a command line, not an MCP server (AddinCli).
+            if (args.Length > 0 && args[0] == "addin")
+            {
+                Environment.ExitCode = await AddinCli.RunAsync(args.Skip(1).ToArray(), Console.Out, Console.Error);
+                return;
+            }
+
             if (args.Any(a => a == "--help" || a == "-h"))
             {
                 PrintHelp();
@@ -226,6 +233,11 @@ namespace RvtMcp.Server
                 "rvt-mcp — Revit MCP server (bimwright.dev)",
                 "",
                 "Usage: rvt-mcp [options]",
+                "       rvt-mcp addin list [--target <selector>]",
+                "       rvt-mcp addin call <addin> <command> [--args <json>] [--target <selector>] [--read-only] [--timeout <seconds>]",
+                "         Commands other add-ins registered in a running Revit (e.g. Sonny.Revit). JSON on stdout, one error line",
+                "         on stderr; exit 0 ok, 1 the command or rvt-mcp refused, 2 bad arguments or no Revit reachable.",
+                "         With several Revit sessions running, --target (year | pid:<n> | id:revit-<year>-<pid>) is required.",
                 "",
                 "Transport:",
                 "  --http <port>           Run HTTP SSE on 127.0.0.1:<port> (1-65535). Default = stdio.",
@@ -398,7 +410,10 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
                     // revit_switch_target is annotated ReadOnly=false (it mutates session
                     // routing) but must stay exposed in read-only sessions so the agent
                     // can always recover the target binding (spec §6.8/§6.11).
-                    || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_switch_target");
+                    || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_switch_target"
+                    // revit_call_addin_command stays too: it refuses an add-in command declared readOnly=false itself
+                    // (AddinMetaTools.ReadOnlyRefusal) and the plugin checks again.
+                    || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_call_addin_command");
         }
 
         internal static IMcpServerBuilder RegisterToolsets(IMcpServerBuilder mcp, HashSet<string> enabled, RvtMcpConfig config)
@@ -411,6 +426,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
         {
             var types = new List<Type>();
             if (enabled.Contains("query"))      types.Add(typeof(QueryTools));
+            if (enabled.Contains("query"))      types.Add(typeof(AddinQueryTools));
             if (enabled.Contains("create"))     types.Add(typeof(CreateTools));
             if (enabled.Contains("modify"))     types.Add(typeof(ModifyTools));
             if (enabled.Contains("delete"))     types.Add(typeof(DeleteTools));
@@ -435,6 +451,7 @@ Tools (prefix revit_<verb>_<noun>, lengths in mm):
             if (IncludeSendCode(enabled, config)) types.Add(typeof(SendCodeTools));
             if (enabled.Contains("meta"))       types.Add(typeof(MetaTools));
             if (enabled.Contains("meta"))       types.Add(typeof(ChangeHistoryTools));
+            if (enabled.Contains("meta"))       types.Add(typeof(AddinMetaTools));
             if (enabled.Contains("lint"))       types.Add(typeof(LintTools));
             if (enabled.Contains("structural")) types.Add(typeof(StructuralTools));
             return types.ToArray();

@@ -82,7 +82,8 @@ namespace RvtMcp.Tests
             Assert.DoesNotContain("\"name\": \"revit_dismiss_bake_suggestion\"", captured);
 
             var count = (int)Newtonsoft.Json.Linq.JObject.Parse(captured)["tool_count"]!;
-            Assert.Equal(46, count);
+            // 46 + revit_list_addin_commands (query) + revit_call_addin_command (meta).
+            Assert.Equal(48, count);
         }
 
         [Fact]

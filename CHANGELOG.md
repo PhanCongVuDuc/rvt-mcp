@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — add-in commands (fork `PhanCongVuDuc/rvt-mcp`, branch `feat/addin-commands`)
+
+- Another add-in loaded in the same Revit can register its commands with rvt-mcp without referencing it: under the
+  AppDomain data key `Bimwright.RvtMcp.AddinCommands.v1` it puts a `ConcurrentDictionary<string, Func<string, string>>`
+  (add-in name → envelope JSON in, envelope JSON out; reserved command `_catalog`, protocol `1`). rvt-mcp reads the key on
+  every call, so load order does not matter and a new add-in command needs no rvt-mcp change.
+- Plugin commands `list_addin_commands` and `call_addin_command`; MCP tools `revit_list_addin_commands` (`query`,
+  read-only) and `revit_call_addin_command` (`meta`; stays in `--read-only` sessions and refuses add-in commands declared
+  `readOnly=false` with `read_only_blocked`). Errors: `addin_not_loaded`, `read_only_blocked`, `addin_protocol_mismatch`,
+  `addin_failed` (path-sanitized).
+- CLI: `rvt-mcp addin list [--target …]`, `rvt-mcp addin call <addin> <command> [--args <json>] [--target …] [--read-only]
+  [--timeout <s>]` — JSON on stdout, exit 0/1/2; several Revit sessions without `--target` is an error listing them.
+- Tool counts: default **48**, `--toolsets all` **235**, adaptive bake **238**.
+
 ## Release history
 
 | Version | Date | Available as |

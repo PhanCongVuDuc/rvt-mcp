@@ -64,6 +64,7 @@ namespace RvtMcp.Plugin
             "get_type_parameters",
             "get_view_visibility",
             "get_viewport_geometry",
+            "list_addin_commands",
             "list_areas",
             "list_assemblies",
             "list_available_targets",
@@ -111,7 +112,9 @@ namespace RvtMcp.Plugin
             if (string.Equals(command, "send_code_to_revit", StringComparison.OrdinalIgnoreCase)
                 && !enableSendCode)
                 return "SEND_CODE_DISABLED: send_code is disabled for this session.";
-            if (readOnly && !IsReadOnly(command))
+            // call_addin_command stays callable in read-only sessions: the tool reads the add-in's catalog and refuses a
+            // command declared readOnly=false, and the plugin checks again with read_only=true (AddinCommandRegistry).
+            if (readOnly && !IsReadOnly(command) && !string.Equals(command, "call_addin_command", StringComparison.OrdinalIgnoreCase))
                 return "READ_ONLY: this tool can change documents or files and is disabled for this session.";
             return null;
         }

@@ -276,6 +276,10 @@ namespace RvtMcp.Plugin
             Register(new Handlers.ActivateViewHandler());
             Register(new Handlers.ShowElementInViewHandler());
 
+            // Commands other add-ins register in the same Revit process (AppDomain registry)
+            Register(new Handlers.ListAddinCommandsHandler());
+            Register(new Handlers.CallAddinCommandHandler());
+
             // A6 batch execution — needs dispatcher ref to look up sub-commands
             Register(new Handlers.BatchExecuteHandler(this));
             // ToolBaker runtime access.

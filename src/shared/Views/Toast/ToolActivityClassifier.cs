@@ -18,6 +18,8 @@ namespace RvtMcp.Plugin.Views.Toast
             "resolve_history_identity",
             "send_code_to_revit",
             "run_baked_tool",
+            // Runs another add-in's command, which may change the model (annotation ReadOnly=false).
+            "call_addin_command",
             "capture_view_image", "get_material_takeoff", "compute_room_finishes",
             "list_bake_suggestions", "open_model",
             "accept_bake_suggestion", "dismiss_bake_suggestion",

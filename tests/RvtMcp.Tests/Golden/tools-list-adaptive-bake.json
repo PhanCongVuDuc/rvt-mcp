@@ -1,6 +1,6 @@
 {
   "generated_by": "ToolsListSnapshotTests",
-  "tool_count": 236,
+  "tool_count": 238,
   "tools": [
     {
       "name": "revit_accept_bake_suggestion",
@@ -830,6 +830,41 @@
         "required": [
           "guid",
           "categories"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "revit_call_addin_command",
+      "description_hash": "sha256:bbf27e540df0108db08f66a8ba4288b7f5446cf30b852c64aa7ff4957c04d4ca",
+      "inputSchema": {
+        "properties": {
+          "addin": {
+            "description": "",
+            "type": "String"
+          },
+          "args": {
+            "description": "",
+            "type": "Object"
+          },
+          "command": {
+            "description": "",
+            "type": "String"
+          },
+          "timeout_seconds": {
+            "description": "",
+            "type": "Nullable`1"
+          }
+        },
+        "required": [
+          "addin",
+          "command"
         ],
         "type": "object"
       },
@@ -4952,6 +4987,21 @@
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
+      }
+    },
+    {
+      "name": "revit_list_addin_commands",
+      "description_hash": "sha256:ac986c74810091181374a0adcc11f6254f6a5760d2289f08500a3244a6cb47f3",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
       }
     },
     {
