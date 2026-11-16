@@ -25,7 +25,9 @@ namespace RvtMcp.Plugin
     /// <c>ConcurrentDictionary&lt;string, Func&lt;string, string&gt;&gt;</c> - add-in name → function taking a command
     /// envelope JSON and returning the response envelope JSON (protocol 1; the reserved command "_catalog" lists its
     /// commands). BCL types only, so it works across Revit 2026+ add-in load contexts. The key is read on every call,
-    /// never cached, so the order the two add-ins load in does not matter. Runs on the Revit thread (ExternalEvent).
+    /// never cached, so the order the two add-ins load in does not matter. Called on a thread-pool thread, never in the
+    /// plugin's ExternalEvent (AddinCommandRoute): an add-in function that needs the Revit API goes to Revit's thread itself
+    /// (ExternalEvent, Revit.Async), and must not assume it runs there.
     /// </summary>
     public static class AddinCommandRegistry
     {

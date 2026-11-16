@@ -27,6 +27,26 @@ namespace RvtMcp.Tests
             Assert.Contains("call send_code_to_revit directly", Newtonsoft.Json.JsonConvert.SerializeObject(outcome.Results));
         }
 
+        [Theory]
+        [InlineData("call_addin_command", false)]
+        [InlineData("call_addin_command", true)]
+        [InlineData("list_addin_commands", false)]
+        public void An_addin_tool_cannot_run_inside_a_batch_on_Revits_thread(string tool, bool continueOnError)
+        {
+            var invoked = false;
+            var outcome = BatchExecutor.Run(new JArray(new JObject
+            {
+                ["command"] = tool, ["params"] = new JObject { ["addin"] = "Sonny.Revit", ["command"] = "walls.count" }
+            }), continueOnError, (name, parameters) =>
+            {
+                invoked = true;
+                return BatchExecutor.InvokeResult.Ok(new { });
+            });
+            Assert.False(invoked);
+            Assert.True(outcome.AnyFailed);
+            Assert.Contains("call " + tool + " directly", Newtonsoft.Json.JsonConvert.SerializeObject(outcome.Results));
+        }
+
         // Scripted dispatcher: dict of commandName → (params → InvokeResult)
         private static Func<string, string, BatchExecutor.InvokeResult> Dispatch(
             Dictionary<string, Func<string, BatchExecutor.InvokeResult>> scripts) =>

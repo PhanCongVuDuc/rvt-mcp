@@ -92,6 +92,16 @@ namespace RvtMcp.Plugin.Handlers
                     continue;
                 }
 
+                // The add-in tools run off the ExternalEvent (AddinCommandRoute); a batch runs inside it, where an add-in that goes to
+                // Revit's thread itself would wait for the thread this batch holds.
+                if (AddinCommandRoute.Takes(cmdName))
+                {
+                    outcome.Results.Add(new { index = i, ok = false, error = cmdName + " cannot be invoked through batch_execute; call " + cmdName + " directly." });
+                    outcome.AnyFailed = true;
+                    if (!continueOnError) return outcome;
+                    continue;
+                }
+
                 if (isBakedCommand != null && isBakedCommand(cmdName))
                 {
                     outcome.Results.Add(new { index = i, ok = false, error = BakedCommandNotSupportedMessage(cmdName) });

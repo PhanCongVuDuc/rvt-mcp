@@ -27,6 +27,9 @@ namespace RvtMcp.Plugin
         private readonly CommandDispatcher _dispatcher;
         private readonly McpSessionLog _sessionLog;
         private readonly McpToastNotifier _toastNotifier;
+        // Revit's UI thread, where the handler is made (App.OnStartup): the History window's rows and the toast are WPF, so an add-in
+        // tool answered on a pool thread reports its outcome back here (RunAddinCommand).
+        private readonly System.Windows.Threading.Dispatcher _ui = System.Windows.Threading.Dispatcher.CurrentDispatcher;
 
         public McpEventHandler(CommandDispatcher dispatcher, McpSessionLog sessionLog, McpToastNotifier toastNotifier = null)
         {
@@ -341,6 +344,142 @@ namespace RvtMcp.Plugin
                 try { App.Instance?.ExternalEvent?.Raise(); }
                 catch { }
             }
+        }
+
+        /// <summary>
+        /// One add-in tool (list_addin_commands / call_addin_command) off the ExternalEvent, on the pool thread
+        /// <see cref="AddinCommandRoute"/> runs it on: the same read-only check, schema check, response guard, call log, History row and
+        /// toast as <see cref="Execute"/>, without Revit's thread. The add-in tools read no UIApplication - AddinCommandRegistry reaches
+        /// the add-in through the AppDomain - so the handler gets none. Returns the wire response.
+        /// </summary>
+        public string RunAddinCommand(PendingRequest request)
+        {
+            var sw = Stopwatch.StartNew();
+            var runtimeConfig = new RvtMcpConfig();
+            string description = null;
+            try
+            {
+                runtimeConfig = RvtMcpConfig.LoadReadOnly().WithRuntimeOptions(request.RuntimeOptions);
+                var rejection = ToolReadPolicy.Rejection(request.CommandName, runtimeConfig.ReadOnlyOrDefault, runtimeConfig.EnableSendCodeOrDefault);
+                if (rejection != null) throw new InvalidOperationException(rejection);
+                var command = _dispatcher.GetCommand(request.CommandName);
+                if (command == null)
+                {
+                    // As Execute: an unknown tool is its own History summary, not the generic failure.
+                    sw.Stop();
+                    var unknownError = McpResponsePrivacy.RedactErrorForResponse($"Unknown command: {request.CommandName}");
+                    Report(request, false, unknownError, sw.ElapsedMilliseconds, null, null, runtimeConfig,
+                        Localization.L.T("history.summary.unknown", ("tool", request.CommandName)), preserveSummary: true);
+                    return JsonConvert.SerializeObject(new { id = request.Id, success = false, error = unknownError });
+                }
+
+                description = command.Description;
+
+                var validation = SchemaValidator.Validate(command.ParametersSchema, request.ParamsJson);
+                if (!validation.IsValid)
+                {
+                    sw.Stop();
+                    var validationError = McpResponsePrivacy.RedactErrorForResponse(validation.Error);
+                    Report(request, false, validationError, sw.ElapsedMilliseconds, null, description, runtimeConfig,
+                        Localization.L.T("history.summary.validationFailed", ("error", validationError)), preserveSummary: true);
+                    return JsonConvert.SerializeObject(new
+                    {
+                        id = request.Id,
+                        success = false,
+                        error = validationError,
+                        suggestion = validation.Suggestion,
+                        hint = validation.Hint
+                    });
+                }
+
+                var result = command.Execute(null, request.ParamsJson);
+                sw.Stop();
+                // The same steps as Execute's success path: guard the response, log what the guard let through, show the redacted view.
+                var handlerData = result.Data;
+                // Serialized then parsed, as Execute does, so both paths read the handler's data with the same serializer settings.
+                var envelope = JObject.Parse(JsonConvert.SerializeObject(new
+                {
+                    id = request.Id,
+                    success = result.Success,
+                    data = result.Data,
+                    error = McpResponsePrivacy.RedactErrorForResponse(NoDocumentGuidance.ForAgent(result.Error))
+                }));
+                var guarded = ResponseEnvelopeGuard.Apply(request.CommandName, request.ParamsJson, envelope, runtimeConfig);
+                var guardedData = guarded["data"];
+                string resultJson = null;
+                try { resultJson = guardedData != null ? JsonConvert.SerializeObject(guardedData) : null; }
+                catch { }
+                string responseResultJson = null;
+                try
+                {
+                    var responseData = McpResponsePrivacy.RedactDataForResponse(request.CommandName, guardedData);
+                    responseResultJson = responseData != null ? JsonConvert.SerializeObject(responseData) : null;
+                }
+                catch { }
+                var resultError = McpResponsePrivacy.RedactErrorForResponse(result.Error);
+                string rejectError = result.Success && !guarded.Value<bool>("success") ? guarded.Value<string>("error") : null;
+                var outcome = CommandOutcome.Normalize(request.CommandName, result.Success, handlerData, resultError, rejectError);
+                var sessionResult = responseResultJson != null && responseResultJson.Length > 10240
+                    ? responseResultJson.Substring(0, 10240)
+                    : responseResultJson;
+                Report(request, outcome.Success, outcome.Error, sw.ElapsedMilliseconds, resultJson, description, runtimeConfig,
+                    SummaryGenerator.Generate(request.CommandName, request.ParamsJson, sessionResult, outcome.Success, outcome.Error),
+                    preserveSummary: false, sessionResult: sessionResult, toastResult: responseResultJson);
+                return guarded.ToString(Formatting.None);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                var exError = McpResponsePrivacy.RedactErrorForResponse(ex.Message);
+                Report(request, false, exError, sw.ElapsedMilliseconds, null, description, runtimeConfig,
+                    SummaryGenerator.Generate(request.CommandName, request.ParamsJson, null, false, exError), preserveSummary: false);
+                return JsonConvert.SerializeObject(new { id = request.Id, success = false, error = exError });
+            }
+        }
+
+        // The call log line, the History row and the toast of one tool call. The log is a file and is written here; the row and the toast
+        // are WPF and go to Revit's UI thread. An exception out of them must not change the answer already decided.
+        private void Report(PendingRequest request, bool success, string error, long durationMs, string resultJson, string description,
+            RvtMcpConfig runtimeConfig, string summary, bool preserveSummary, string sessionResult = null, string toastResult = null)
+        {
+            try
+            {
+                McpLogger.Log(request.CommandName, request.ParamsJson, success, durationMs, error, null, resultJson,
+                    runtimeConfig.EnableCallLogOrDefault);
+            }
+            catch (Exception logEx)
+            {
+                App.DebugLog("McpLogger.Log failed (add-in tool): " + logEx.Message);
+            }
+
+            Action show = () =>
+            {
+                try
+                {
+                    _sessionLog?.Add(new McpCallEntry
+                    {
+                        ToolName = request.CommandName,
+                        ParamsJson = request.ParamsJson,
+                        Success = success,
+                        DurationMs = durationMs,
+                        ErrorMessage = error,
+                        ResultJson = sessionResult,
+                        ToolDescription = description,
+                        Summary = summary,
+                        PreserveSummary = preserveSummary
+                    });
+                    // As Execute: the toast gets the whole redacted result, the History row the 10 KB cut.
+                    _toastNotifier?.OnCompleted(request.CommandName, request.ParamsJson, toastResult, success, error, durationMs, description);
+                }
+                catch (Exception reportEx)
+                {
+                    App.DebugLog("Reporting an add-in tool call failed: " + reportEx.Message);
+                }
+            };
+            if (_ui.CheckAccess())
+                show();
+            else
+                _ui.BeginInvoke(show);
         }
 
         public string GetName() => "RvtMcp.McpEventHandler";

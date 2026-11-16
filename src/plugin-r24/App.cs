@@ -149,6 +149,10 @@ namespace RvtMcp.Plugin
                     Tcs = tcs
                 };
 
+                // The add-in tools run off the ExternalEvent; the add-in goes to Revit's thread itself when it needs it.
+                if (AddinCommandRoute.TryRun(pending.CommandName, tcs, () => _handler.RunAddinCommand(pending), pending.Id))
+                    return;
+
                 _handler.Enqueue(pending);
                 _externalEvent.Raise();
             });
