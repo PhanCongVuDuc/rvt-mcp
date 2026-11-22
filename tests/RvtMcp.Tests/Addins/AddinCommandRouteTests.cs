@@ -38,17 +38,24 @@ namespace RvtMcp.Tests.Addins
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             var caller = Thread.CurrentThread.ManagedThreadId;
-            var ranOn = -1;
+            var insideTryRun = true;
+            var ranInline = false;
+            var ranOnPool = false;
 
             var taken = AddinCommandRoute.TryRun(tool, tcs, () =>
             {
-                ranOn = Thread.CurrentThread.ManagedThreadId;
+                // The caller is itself a pool thread: once it awaits, the pool may hand it this work, so a matching id alone
+                // is not a failure. Running inside TryRun on the caller is.
+                ranInline = Volatile.Read(ref insideTryRun) && Thread.CurrentThread.ManagedThreadId == caller;
+                ranOnPool = Thread.CurrentThread.IsThreadPoolThread;
                 return "{\"success\":true}";
             });
+            Volatile.Write(ref insideTryRun, false);
 
             Assert.True(taken);
             Assert.Equal("{\"success\":true}", await tcs.Task.WaitAsync(TimeSpan.FromSeconds(10)));
-            Assert.NotEqual(caller, ranOn);
+            Assert.False(ranInline);
+            Assert.True(ranOnPool);
         }
 
         [Theory]

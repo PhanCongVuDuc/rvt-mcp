@@ -91,20 +91,5 @@ namespace RvtMcp.Tests
             Assert.Equal(TornConfig, File.ReadAllText(Cfg));
         }
 
-        [Fact]
-        public void SavePersistSendCodeBodies_MalformedConfig_LeavesFileUntouched()
-        {
-            File.WriteAllText(Cfg, TornConfig);
-            RvtMcpConfig.SavePersistSendCodeBodies(true, null, Cfg);
-            Assert.Equal(TornConfig, File.ReadAllText(Cfg));
-        }
-
-        [Fact]
-        public void ClearPersistSendCodeBodies_MalformedConfig_LeavesFileUntouched()
-        {
-            File.WriteAllText(Cfg, TornConfig);
-            RvtMcpConfig.ClearPersistSendCodeBodies(Cfg, requireExplicitEnable: true);
-            Assert.Equal(TornConfig, File.ReadAllText(Cfg));
-        }
     }
 }

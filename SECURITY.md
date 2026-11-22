@@ -15,7 +15,7 @@ bimwright runs on `127.0.0.1` only. The attack surface is:
 
 - Local processes that can read the discovery files (`%LOCALAPPDATA%\Bimwright\rvt-mcp\revit-2022.json`..`revit-2027.json`)
 - Local processes that can connect to the TCP port or Named Pipe
-- Code executed via `send_code_to_revit` or materialized by the ToolBaker engine
+- Code executed via `send_code_to_revit`
 
 ## Mitigations in place
 
@@ -45,15 +45,12 @@ bimwright runs on `127.0.0.1` only. The attack surface is:
 ### Network binding
 - TCP listener: `127.0.0.1` only (not `0.0.0.0`).
 - Named Pipe: local machine scope.
-- HTTP SSE path: `127.0.0.1` only, middleware rejects non-localhost `Host` headers.
 - Any non-localhost plugin bind requires explicit `BIMWRIGHT_ALLOW_LAN_BIND=1` opt-in.
 
-### Dynamic code paths (`send_code_to_revit`, ToolBaker)
-- `send_code_to_revit` is on the default `meta` surface (still hidden by `--read-only` or `--disable-toolbaker`) and executes through the same local authenticated MCP channel as the rest of the Revit tools.
-- Adaptive bake is separate: it only enables suggestion/logging tools and is not required for `send_code_to_revit`.
-- Use `--read-only` or `--disable-toolbaker` when a host profile should not expose dynamic-code execution.
-- ToolBaker bakes require user approval per tool + operate under the host Revit process trust boundary. Production hardening, including signed-bake verification, remains tracked as v1.0 hardening work.
-- **TTL send_code journal:** When `persistSendCodeBodies` is enabled, raw code bodies (partially redacted for paths and secrets) are stored on the local disk under `%LOCALAPPDATA%\Bimwright\rvt-mcp\send-code-journal.jsonl`. This journal has a maximum 2-day TTL and is completely deleted 7 days after expiration or disablement. Secure local environment access is required to prevent unauthorized reading of local journal files.
+### Dynamic code path (`send_code_to_revit`)
+- `send_code_to_revit` is on the default `meta` surface and executes through the same local authenticated MCP channel as the rest of the Revit tools.
+- Use `--read-only` or `--disable-send-code` when a host profile should not expose dynamic-code execution.
+- With `cacheSendCodeBodies` on, submitted code bodies are kept in the plugin's call log so History can re-run them; otherwise only a hash and length are recorded.
 
 ## Reporting a vulnerability
 

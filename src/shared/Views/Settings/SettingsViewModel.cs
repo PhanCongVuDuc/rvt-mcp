@@ -18,16 +18,10 @@ namespace RvtMcp.Plugin.Views.Settings
         private RvtMcpConfig _snapshot;
         private bool _toastEnabled;
         private int _toastIdleSeconds;
-        private bool _persistSendCodeBodies;
-        private int _persistSendCodeBodiesHours;
         private bool _cacheSendCodeBodies;
         private int _baselineToastIdleSeconds;
-        private bool _baselinePersistSendCodeBodies;
-        private int _baselinePersistSendCodeBodiesHours;
         private bool _baselineCacheSendCodeBodies;
         private bool _toastIdleDirty;
-        private bool _persistSendCodeBodiesDirty;
-        private bool _persistSendCodeBodiesHoursDirty;
         private bool _cacheSendCodeBodiesDirty;
         private string _selectedLanguage;
         private bool _disposed;
@@ -60,17 +54,7 @@ namespace RvtMcp.Plugin.Views.Settings
             set => SetStaged(ref _toastIdleSeconds, RvtMcpConfig.NormalizeToastIdleSeconds(value), ref _toastIdleDirty, nameof(ToastIdleSeconds));
         }
 
-        public bool PersistSendCodeBodies
-        {
-            get => _persistSendCodeBodies;
-            set => SetStaged(ref _persistSendCodeBodies, value, ref _persistSendCodeBodiesDirty, nameof(PersistSendCodeBodies));
-        }
 
-        public int PersistSendCodeBodiesHours
-        {
-            get => _persistSendCodeBodiesHours;
-            set => SetStaged(ref _persistSendCodeBodiesHours, RvtMcpConfig.NormalizePersistSendCodeBodiesHours(value), ref _persistSendCodeBodiesHoursDirty, nameof(PersistSendCodeBodiesHours));
-        }
 
         public bool CacheSendCodeBodies
         {
@@ -117,16 +101,10 @@ namespace RvtMcp.Plugin.Views.Settings
             _snapshot = RvtMcpConfig.LoadReadOnly();
             _toastEnabled = _app.ToastEnabled;
             _toastIdleSeconds = _snapshot.ToastIdleSecondsOrDefault;
-            _persistSendCodeBodies = _snapshot.IsPersistSendCodeBodiesActive();
-            _persistSendCodeBodiesHours = _snapshot.PersistSendCodeBodiesHoursOrDefault;
             _cacheSendCodeBodies = _snapshot.CacheSendCodeBodiesOrDefault;
             _baselineToastIdleSeconds = _toastIdleSeconds;
-            _baselinePersistSendCodeBodies = _persistSendCodeBodies;
-            _baselinePersistSendCodeBodiesHours = _persistSendCodeBodiesHours;
             _baselineCacheSendCodeBodies = _cacheSendCodeBodies;
             _toastIdleDirty = false;
-            _persistSendCodeBodiesDirty = false;
-            _persistSendCodeBodiesHoursDirty = false;
             _cacheSendCodeBodiesDirty = false;
             _lastLanguageVersion = L.Version;
             _selectedLanguage = LocaleResolver.NormalizeCode(_snapshot.UiLanguage);
@@ -154,17 +132,9 @@ namespace RvtMcp.Plugin.Views.Settings
         public SettingsApplyReport Apply()
         {
             var result = new SettingsApplyReport();
-            var journalExpiredWhileOpen = false;
-            if (_snapshot != null && _snapshot.IsPersistSendCodeBodiesActive())
-            {
-                try { journalExpiredWhileOpen = !RvtMcpConfig.LoadReadOnly().IsPersistSendCodeBodiesActive(); }
-                catch { }
-            }
             var patch = new RvtMcpConfig.SettingsPatch
             {
                 ToastIdleSeconds = _toastIdleDirty ? (int?)ToastIdleSeconds : null,
-                PersistSendCodeBodiesHours = _persistSendCodeBodiesHoursDirty ? (int?)PersistSendCodeBodiesHours : null,
-                PersistSendCodeBodies = _persistSendCodeBodiesDirty ? (bool?)PersistSendCodeBodies : null,
                 CacheSendCodeBodies = _cacheSendCodeBodiesDirty ? (bool?)CacheSendCodeBodies : null,
             };
             var applied = RvtMcpConfig.TryApplySettings(patch);
@@ -176,25 +146,9 @@ namespace RvtMcp.Plugin.Views.Settings
                 result.FieldErrors[failure.Key] = message;
                 App.DebugLog("Settings apply failed for " + failure.Key + ": " + failure.Error);
             }
-            result.JournalWasExpired = applied.JournalWasExpired;
-            if (journalExpiredWhileOpen)
-            {
-                result.JournalWasExpired = true;
-            }
-            if (result.JournalWasExpired)
-            {
-                ImmediateWarningKey = "persistSendCodeBodies";
-                ImmediateWarning = SettingsText.Text("settings.footer.journalExpired",
-                    "The send_code journal expired while Settings was open; it was not re-enabled.");
-                OnPropertyChanged(nameof(ImmediateWarning));
-            }
             RefreshEffectiveConfigAfterApply();
             if (applied.Applied.Contains("toastIdleSeconds") && _app.Config != null)
                 _app.Config.ToastIdleSeconds = ToastIdleSeconds;
-            if (applied.Applied.Contains("persistSendCodeBodiesHours") && _app.Config != null)
-                _app.Config.PersistSendCodeBodiesHours = PersistSendCodeBodiesHours;
-            if (applied.Applied.Contains("persistSendCodeBodies") && _app.Config != null)
-                _app.Config.PersistSendCodeBodies = PersistSendCodeBodies;
             if (applied.Applied.Contains("cacheSendCodeBodies") && _app.Config != null)
                 _app.Config.CacheSendCodeBodies = CacheSendCodeBodies;
             if (applied.Applied.Contains("toastIdleSeconds"))
@@ -202,22 +156,12 @@ namespace RvtMcp.Plugin.Views.Settings
                 _baselineToastIdleSeconds = ToastIdleSeconds;
                 _toastIdleDirty = false;
             }
-            if (applied.Applied.Contains("persistSendCodeBodiesHours"))
-            {
-                _baselinePersistSendCodeBodiesHours = PersistSendCodeBodiesHours;
-                _persistSendCodeBodiesHoursDirty = false;
-            }
-            if (applied.Applied.Contains("persistSendCodeBodies"))
-            {
-                _baselinePersistSendCodeBodies = PersistSendCodeBodies;
-                _persistSendCodeBodiesDirty = false;
-            }
             if (applied.Applied.Contains("cacheSendCodeBodies"))
             {
                 _baselineCacheSendCodeBodies = CacheSendCodeBodies;
                 _cacheSendCodeBodiesDirty = false;
             }
-            IsDirty = _toastIdleDirty || _persistSendCodeBodiesHoursDirty || _persistSendCodeBodiesDirty || _cacheSendCodeBodiesDirty;
+            IsDirty = _toastIdleDirty || _cacheSendCodeBodiesDirty;
             OnPropertyChanged(nameof(IsDirty));
             return result;
         }
@@ -230,10 +174,6 @@ namespace RvtMcp.Plugin.Views.Settings
                 _snapshot = persisted;
                 if (_app.Config == null) return;
                 _app.Config.ToastIdleSeconds = persisted.ToastIdleSeconds;
-                _app.Config.PersistSendCodeBodiesHours = persisted.PersistSendCodeBodiesHours;
-                _app.Config.PersistSendCodeBodies = persisted.PersistSendCodeBodies;
-                _app.Config.PersistSendCodeBodiesUntil = persisted.PersistSendCodeBodiesUntil;
-                _app.Config.PersistSendCodeBodiesRequiresExplicitEnable = persisted.PersistSendCodeBodiesRequiresExplicitEnable;
                 _app.Config.CacheSendCodeBodies = persisted.CacheSendCodeBodies;
             }
             catch
@@ -382,10 +322,8 @@ namespace RvtMcp.Plugin.Views.Settings
             if (Equals(field, value)) return;
             field = value;
             if (name == nameof(ToastIdleSeconds)) dirty = !Equals(value, _baselineToastIdleSeconds);
-            else if (name == nameof(PersistSendCodeBodies)) dirty = !Equals(value, _baselinePersistSendCodeBodies);
-            else if (name == nameof(PersistSendCodeBodiesHours)) dirty = !Equals(value, _baselinePersistSendCodeBodiesHours);
             else if (name == nameof(CacheSendCodeBodies)) dirty = !Equals(value, _baselineCacheSendCodeBodies);
-            IsDirty = _toastIdleDirty || _persistSendCodeBodiesDirty || _persistSendCodeBodiesHoursDirty || _cacheSendCodeBodiesDirty;
+            IsDirty = _toastIdleDirty || _cacheSendCodeBodiesDirty;
             OnPropertyChanged(name);
             OnPropertyChanged(nameof(IsDirty));
         }

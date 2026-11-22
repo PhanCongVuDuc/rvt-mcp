@@ -15,8 +15,6 @@ namespace RvtMcp.Plugin.Views.Settings
         bool ToastEnabled { get; }
         int ToastIdleSeconds { get; set; }
         bool CacheSendCodeBodies { get; set; }
-        bool PersistSendCodeBodies { get; set; }
-        int PersistSendCodeBodiesHours { get; set; }
         bool IsDirty { get; }
         string ImmediateWarning { get; }
         string ImmediateWarningKey { get; }

@@ -36,6 +36,5 @@ namespace RvtMcp.Plugin.Views.Settings
         public System.Collections.Generic.IList<string> Failed { get; private set; }
         public System.Collections.Generic.IDictionary<string, string> FieldErrors { get; private set; }
         public bool Succeeded => Failed.Count == 0;
-        public bool JournalWasExpired { get; set; }
     }
 }

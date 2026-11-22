@@ -70,19 +70,6 @@ namespace RvtMcp.Tests
         }
 
         [Theory]
-        [InlineData("inline", "C:\\test\\report.json", true)]
-        [InlineData("inline", "C:\\test\\report.csv", true)]
-        [InlineData("file", "", true)]
-        [InlineData("inline", "", false)]
-        [InlineData("inline", " ", false)]
-        public void Takeoff_policy_recognizes_both_file_outputs(string output, string path, bool expected)
-        {
-            var arguments = new JObject { ["output"] = output, ["output_path"] = path };
-            Assert.Equal(expected, ResponseSizePolicyCatalog.ShouldPreserveSuccessfulMutation(
-                "workflow_takeoff_report", arguments.ToString(), true));
-        }
-
-        [Theory]
         [InlineData("C:\\test\\report.json")]
         [InlineData("C:\\test\\report.csv")]
         public void Completed_takeoff_export_survives_plugin_and_server_guards(string path)
@@ -154,30 +141,6 @@ namespace RvtMcp.Tests
             var server = ServerGuard("workflow_takeoff_report", arguments, Text(plugin["data"]), Limits());
             Assert.NotEqual(true, server.IsError);
             Assert.False(ResultData(server).Value<bool>("mutation_applied"));
-        }
-
-        [Theory]
-        [InlineData(20)]
-        [InlineData(16000)]
-        public void Failed_takeoff_export_is_not_promoted_to_a_completed_write(int detailChars)
-        {
-            var arguments = new JObject { ["output"] = "inline", ["output_path"] = "C:\\test\\report.json" };
-            var data = TakeoffData("failed", "C:\\test\\report.json", detailChars);
-            var plugin = PluginGuard("workflow_takeoff_report", arguments, data, Limits());
-            Assert.False(plugin.Value<bool>("success"));
-            Assert.Null(plugin["data"]?["mutation_applied"]);
-            var server = ServerGuard("workflow_takeoff_report", arguments, Text(data), Limits());
-            Assert.True(server.IsError);
-            Assert.NotEqual(true, ResultData(server).Value<bool?>("mutation_applied"));
-        }
-
-        [Fact]
-        public void Takeoff_without_a_file_destination_remains_an_oversized_read_error()
-        {
-            var arguments = new JObject { ["output"] = "inline" };
-            var plugin = PluginGuard("workflow_takeoff_report", arguments, TakeoffData("succeeded", null), Limits());
-            Assert.False(plugin.Value<bool>("success"));
-            Assert.Contains("RESPONSE_TOO_LARGE", plugin.Value<string>("error"));
         }
 
         private static JObject TakeoffData(string status, string path, int detailChars = 16000)

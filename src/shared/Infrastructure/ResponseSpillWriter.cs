@@ -7,7 +7,6 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Data.Sqlite;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -15,7 +14,6 @@ namespace RvtMcp.Plugin
 {
     public enum ResponseSpillFormat
     {
-        Sqlite,
         Ndjson,
         Json,
         Text,
@@ -118,8 +116,6 @@ namespace RvtMcp.Plugin
                         DescribeJsonSchema(token));
                 case ResponseSpillFormat.Ndjson:
                     return WriteNdjson(commandName, token);
-                case ResponseSpillFormat.Sqlite:
-                    return WriteSqlite(commandName, token);
                 case ResponseSpillFormat.Text:
                     return WriteTextArtifact(
                         commandName,
@@ -313,296 +309,12 @@ namespace RvtMcp.Plugin
             return new JArray(names);
         }
 
-        private ResponseSpillResult WriteSqlite(string commandName, JToken token)
-        {
-            // Bind initialization to our referenced bundle. Revit can load another
-            // add-in's batteries assembly first, which SqliteConnection's reflection
-            // probe may initialize instead of the SQLitePCLRaw.core used here.
-            SQLitePCL.Batteries_V2.Init();
-            var tables = Relationalize(token);
-            var path = BuildPath(commandName, ".sqlite");
-
-            using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = path,
-                Mode = SqliteOpenMode.ReadWriteCreate
-            }.ToString()))
-            {
-                connection.Open();
-                using (var transaction = connection.BeginTransaction())
-                {
-                    foreach (var table in tables)
-                        WriteSqliteTable(connection, transaction, table);
-                    transaction.Commit();
-                }
-            }
-
-            Cleanup(DateTime.UtcNow, path);
-
-            var schema = new JObject();
-            var previewObject = new JObject();
-            long recordCount = 0;
-            foreach (var table in tables)
-            {
-                schema[table.Name] = table.Columns.Count == 0
-                    ? new JArray("_row")
-                    : new JArray(table.Columns);
-                if (!string.Equals(table.Name, "_root", StringComparison.Ordinal))
-                    recordCount += table.Rows.Count;
-
-                var previewRows = new JArray();
-                foreach (var row in table.Rows.Take(20))
-                {
-                    var previewRow = new JObject();
-                    foreach (var column in table.Columns)
-                        previewRow[column] = row.TryGetValue(column, out var value) ? value.DeepClone() : JValue.CreateNull();
-                    previewRows.Add(previewRow);
-                }
-                previewObject[table.Name] = previewRows;
-            }
-
-            var preview = TakeUtf8Prefix(previewObject.ToString(Formatting.None), PreviewMaxBytes, out var previewTruncated);
-            var result = new ResponseSpillResult
-            {
-                Path = path,
-                Format = "sqlite",
-                ByteCount = new FileInfo(path).Length,
-                RecordCount = recordCount,
-                Schema = schema,
-                Preview = preview,
-                PreviewTruncated = previewTruncated
-            };
-            result.Envelope = BuildEnvelope(result);
-            return result;
-        }
-
-        private static List<RelationalTable> Relationalize(JToken token)
-        {
-            var tables = new List<RelationalTable>();
-            if (token is JObject root)
-            {
-                var rootRow = new Dictionary<string, JToken>(StringComparer.Ordinal);
-                foreach (var property in root.Properties())
-                {
-                    if (property.Value is JArray collection)
-                        CollectArray(tables, SanitizeSqlName(property.Name, "records"), collection, null, null);
-                    else if (property.Value is JObject nested)
-                        FlattenObject(rootRow, property.Name, nested);
-                    else
-                        AddColumn(rootRow, property.Name, property.Value);
-                }
-                if (rootRow.Count > 0)
-                {
-                    var rootTable = new RelationalTable("_root");
-                    rootTable.AddRow(rootRow);
-                    tables.Insert(0, rootTable);
-                }
-            }
-            else if (token is JArray array)
-            {
-                CollectArray(tables, "records", array, null, null);
-            }
-            else
-            {
-                var rootTable = new RelationalTable("_root");
-                rootTable.AddRow(new Dictionary<string, JToken>(StringComparer.Ordinal) { ["value"] = token });
-                tables.Add(rootTable);
-            }
-
-            if (tables.Count == 0)
-                tables.Add(new RelationalTable("_root"));
-            return tables;
-        }
-
-        private static void CollectArray(
-            List<RelationalTable> tables,
-            string tableName,
-            JArray collection,
-            string? parentTable,
-            int? parentRow)
-        {
-            var table = tables.FirstOrDefault(t => string.Equals(t.Name, tableName, StringComparison.Ordinal));
-            if (table == null)
-            {
-                table = new RelationalTable(tableName);
-                tables.Add(table);
-            }
-
-            foreach (var item in collection)
-            {
-                var row = new Dictionary<string, JToken>(StringComparer.Ordinal);
-                if (parentTable != null)
-                {
-                    row["_parent_table"] = parentTable;
-                    row["_parent_row"] = parentRow.HasValue ? new JValue(parentRow.Value) : JValue.CreateNull();
-                }
-
-                var nestedCollections = new List<Tuple<string, JArray>>();
-                if (item is JObject obj)
-                {
-                    foreach (var property in obj.Properties())
-                    {
-                        if (property.Value is JArray nestedArray)
-                            nestedCollections.Add(Tuple.Create(property.Name, nestedArray));
-                        else if (property.Value is JObject nestedObject)
-                            FlattenObject(row, property.Name, nestedObject);
-                        else
-                            AddColumn(row, property.Name, property.Value);
-                    }
-                }
-                else
-                {
-                    row["value"] = item;
-                }
-
-                var rowIndex = table.Rows.Count;
-                table.AddRow(row);
-                foreach (var nested in nestedCollections)
-                {
-                    CollectArray(
-                        tables,
-                        SanitizeSqlName(tableName + "_" + nested.Item1, "records"),
-                        nested.Item2,
-                        table.Name,
-                        rowIndex);
-                }
-            }
-        }
-
-        private static void FlattenObject(Dictionary<string, JToken> row, string prefix, JObject value)
-        {
-            foreach (var property in value.Properties())
-            {
-                var name = prefix + "_" + property.Name;
-                if (property.Value is JObject nested)
-                    FlattenObject(row, name, nested);
-                else if (property.Value is JArray array)
-                    AddColumn(row, name, new JValue(array.ToString(Formatting.None)));
-                else
-                    AddColumn(row, name, property.Value);
-            }
-        }
-
-        private static void AddColumn(Dictionary<string, JToken> row, string rawName, JToken value)
-        {
-            var baseName = SanitizeSqlName(rawName, "value");
-            var name = baseName;
-            var suffix = 2;
-            while (row.ContainsKey(name))
-                name = baseName + "_" + (suffix++).ToString(CultureInfo.InvariantCulture);
-            row[name] = value;
-        }
-
-        private static void WriteSqliteTable(SqliteConnection connection, SqliteTransaction transaction, RelationalTable table)
-        {
-            var columns = table.Columns.Count == 0 ? new[] { "_row" } : table.Columns.ToArray();
-            var definitions = columns.Select(column => QuoteSqlIdentifier(column) + " " + InferSqliteType(table, column));
-            using (var create = connection.CreateCommand())
-            {
-                create.Transaction = transaction;
-                create.CommandText = "CREATE TABLE " + QuoteSqlIdentifier(table.Name) + " (" + string.Join(", ", definitions) + ")";
-                create.ExecuteNonQuery();
-            }
-
-            if (table.Rows.Count == 0)
-                return;
-
-            using (var insert = connection.CreateCommand())
-            {
-                insert.Transaction = transaction;
-                insert.CommandText = "INSERT INTO " + QuoteSqlIdentifier(table.Name)
-                    + " (" + string.Join(", ", columns.Select(QuoteSqlIdentifier)) + ") VALUES ("
-                    + string.Join(", ", columns.Select((_, index) => "$p" + index.ToString(CultureInfo.InvariantCulture))) + ")";
-                for (var i = 0; i < columns.Length; i++)
-                    insert.Parameters.Add(new SqliteParameter("$p" + i.ToString(CultureInfo.InvariantCulture), null));
-
-                foreach (var row in table.Rows)
-                {
-                    for (var i = 0; i < columns.Length; i++)
-                    {
-                        insert.Parameters[i].Value = row.TryGetValue(columns[i], out var value)
-                            ? ToSqliteValue(value)
-                            : DBNull.Value;
-                    }
-                    insert.ExecuteNonQuery();
-                }
-            }
-        }
-
-        private static string InferSqliteType(RelationalTable table, string column)
-        {
-            var sawReal = false;
-            foreach (var row in table.Rows)
-            {
-                if (!row.TryGetValue(column, out var value) || value.Type == JTokenType.Null)
-                    continue;
-                if (value.Type == JTokenType.Integer || value.Type == JTokenType.Boolean)
-                    continue;
-                if (value.Type == JTokenType.Float)
-                {
-                    sawReal = true;
-                    continue;
-                }
-                return "TEXT";
-            }
-            return sawReal ? "REAL" : "INTEGER";
-        }
-
-        private static object ToSqliteValue(JToken value)
-        {
-            switch (value.Type)
-            {
-                case JTokenType.Null:
-                case JTokenType.Undefined:
-                    return DBNull.Value;
-                case JTokenType.Boolean:
-                    return value.Value<bool>() ? 1L : 0L;
-                case JTokenType.Integer:
-                    return value.Value<long>();
-                case JTokenType.Float:
-                    return value.Value<double>();
-                case JTokenType.String:
-                    return value.Value<string>() ?? string.Empty;
-                default:
-                    return value.ToString(Formatting.None);
-            }
-        }
-
-        private static string QuoteSqlIdentifier(string value)
-        {
-            return "\"" + value.Replace("\"", "\"\"") + "\"";
-        }
-
         private static string SanitizeSqlName(string? value, string fallback)
         {
             var builder = new StringBuilder();
             foreach (var c in value ?? string.Empty)
                 builder.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
             return builder.Length == 0 ? fallback : builder.ToString();
-        }
-
-        private sealed class RelationalTable
-        {
-            private readonly HashSet<string> _columnSet = new HashSet<string>(StringComparer.Ordinal);
-
-            public RelationalTable(string name)
-            {
-                Name = name;
-            }
-
-            public string Name { get; }
-            public List<string> Columns { get; } = new List<string>();
-            public List<Dictionary<string, JToken>> Rows { get; } = new List<Dictionary<string, JToken>>();
-
-            public void AddRow(Dictionary<string, JToken> row)
-            {
-                foreach (var column in row.Keys)
-                {
-                    if (_columnSet.Add(column))
-                        Columns.Add(column);
-                }
-                Rows.Add(row);
-            }
         }
 
         public SpillCleanupResult Cleanup(DateTime utcNow)
@@ -745,7 +457,7 @@ namespace RvtMcp.Plugin
                 if (usedBytes >= SchemaMaxBytes - 256)
                     break;
             }
-            bounded["_truncated"] = "Schema column list was bounded; inspect SQLite PRAGMA table_info(...) for the complete schema. Omitted entries: "
+            bounded["_truncated"] = "Schema column list was bounded; read the spill file for the complete schema. Omitted entries: "
                 + omitted.ToString(CultureInfo.InvariantCulture) + ".";
             return bounded;
         }

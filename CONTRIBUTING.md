@@ -72,12 +72,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the conceptual model. Quick reference
 
 | Path | What lives here |
 |------|-----------------|
-| `src/server/` | MCP server, tool registration, stdio/HttpSse entry points |
-| `src/shared/Handlers/` | One file per Revit command handler; 46 tools on bare CLI, 233 with all toolsets, 236 with all + adaptive bake |
-| `src/shared/Infrastructure/` | `CommandDispatcher`, `McpEventHandler`, `SchemaValidator`, `BatchExecutor` |
+| `src/server/` | MCP server, tool registration, stdio entry point, Windows notifications |
+| `src/shared/Handlers/` | One file per Revit command handler (11 plugin commands; 3 target tools are server-only) |
+| `src/shared/Infrastructure/` | `CommandDispatcher`, `McpEventHandler`, `SchemaValidator` |
 | `src/shared/Transport/` | `ITransportServer`, TCP + Named Pipe implementations |
 | `src/shared/Security/` | `AuthToken`, `ErrorSanitizer`, `SecretMasker` |
-| `src/shared/ToolBaker/` | Roslyn-based self-evolution engine |
 | `src/shared/Config/` | `RvtMcpConfig` — 3-layer precedence |
 | `src/plugin-r<nn>/` | Revit-year shell: `App.cs`, `RibbonSetup.cs`, csproj, `.addin` |
 | `tests/RvtMcp.Tests/` | xUnit tests (pure .NET 8, no Revit API) |
@@ -151,7 +150,7 @@ Tool names and parameter keys use `snake_case`. We do not maintain aliases for t
 
 ## Security
 
-Do **not** open a public issue for anything that looks like a privilege-escalation, auth bypass, or RCE via `send_code_to_revit` / ToolBaker. Contact the maintainer privately first — see `SECURITY.md` if present, otherwise email the address on the commit history.
+Do **not** open a public issue for anything that looks like a privilege-escalation, auth bypass, or RCE via `send_code_to_revit`. Contact the maintainer privately first — see `SECURITY.md` if present, otherwise email the address on the commit history.
 
 ## Code of Conduct
 

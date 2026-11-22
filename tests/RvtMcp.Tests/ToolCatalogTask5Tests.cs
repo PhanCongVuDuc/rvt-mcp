@@ -12,6 +12,7 @@ using Xunit;
 
 namespace RvtMcp.Tests
 {
+    [Collection("ToolCatalogStore")]
     public sealed class ToolCatalogTask5Tests
     {
         [Fact]
@@ -182,9 +183,7 @@ namespace RvtMcp.Tests
         {
             var config = new RvtMcpConfig
             {
-                Toolsets = new List<string> { "meta", "toolbaker" },
-                EnableToolbaker = true,
-                EnableAdaptiveBake = true
+                Toolsets = new List<string> { "meta", "toolbaker" }
             };
 
             var catalog = ServerToolCatalogBuilder.Build(ToolsetFilter.Resolve(config), config);

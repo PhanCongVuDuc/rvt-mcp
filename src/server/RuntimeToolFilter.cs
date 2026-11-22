@@ -38,7 +38,7 @@ namespace RvtMcp.Server
                         if (targetCtx.Payload != null)
                             result = TextResult(MetaTools.TargetEnvelope(targetCtx.Payload), failed: true);
                         var final = Apply(request.Params, result, config, session, durationMs: clock.ElapsedMilliseconds,
-                            changes: capture.Changes, history: capture.History);
+                            changes: capture.Changes);
                         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
                             ServerToast.Instance?.Record(request.Params?.Name, final.IsError == true, ToolGateway.CurrentRevitVersion);
                         return final;
@@ -52,7 +52,7 @@ namespace RvtMcp.Server
 
         internal static CallToolResult Apply(CallToolRequestParams request, CallToolResult result,
             RvtMcpConfig config, SessionContext session = null, ResponseSpillWriter writer = null, long durationMs = 0,
-            JObject changes = null, JObject history = null)
+            JObject changes = null)
         {
             var name = request?.Name ?? "";
             var command = name.StartsWith("revit_", StringComparison.Ordinal) ? name.Substring(6) : name;
@@ -120,14 +120,13 @@ namespace RvtMcp.Server
                 }
             }
             changes = ChangeSummary.ForAgent(changes);
-            if (changes != null || history != null)
+            if (changes != null)
             {
                 JObject data;
                 var currentText = result.Content?.OfType<TextContentBlock>().FirstOrDefault()?.Text;
                 try { data = JObject.Parse(currentText ?? "{}"); }
                 catch { data = new JObject { [result.IsError == true ? "error" : "result"] = currentText }; }
                 if (changes != null) data["_changes"] = changes;
-                if (history != null) data["_history"] = history;
                 result = TextResult(data, result.IsError == true);
                 if (Encoding.UTF8.GetByteCount(Serialize(result)) > limit)
                 {
@@ -139,8 +138,7 @@ namespace RvtMcp.Server
                             ["success"] = result.IsError != true,
                             ["response_compacted"] = true,
                             ["mutation_applied"] = JValue.CreateNull(),
-                            ["_changes"] = changes == null ? null : ChangeSummary.Omitted(),
-                            ["_history"] = history == null ? null : new JObject { ["status"] = history["status"], ["callId"] = history["callId"], ["modelKey"] = history["modelKey"], ["identityStatus"] = history["identityStatus"] }
+                            ["_changes"] = ChangeSummary.Omitted()
                         }, result.IsError == true);
                 }
             }
@@ -157,8 +155,7 @@ namespace RvtMcp.Server
             try
             {
                 var obj = JObject.Parse(text ?? "{}");
-                return obj.Value<bool?>("ok") == false || obj.Value<bool?>("success") == false
-                    || ResponseSizePolicyCatalog.GetOperationError(command, obj) != null;
+                return obj.Value<bool?>("ok") == false || obj.Value<bool?>("success") == false;
             }
             catch { return false; }
         }

@@ -1,7 +1,7 @@
 # UI Localization
 
-rvt-mcp's **plugin UI** (ribbon labels, tooltips, toasts, History window, dialogs,
-Bake Inbox) is localized. The MCP-facing surface — tool names, schemas,
+rvt-mcp's **plugin UI** (ribbon labels, tooltips, History window, Settings, dialogs)
+is localized. Activity notifications are raised by the server and stay English. The MCP-facing surface — tool names, schemas,
 descriptions, wire payloads, logs, and anything an agent writes — stays English.
 
 ## Which language shows
@@ -133,16 +133,12 @@ Run once per release on at least the oldest and newest shells (Revit 2022 /
 **Surfaces** (with a non-English locale active)
 
 - [ ] Ribbon: toggle button text + tooltips, History button + count, Toast
-      button tooltip, Bake Inbox, Settings + Language buttons.
-- [ ] Toast: run `revit_get_rooms` on an empty and a populated model →
-      localized empty-state and "label: count" lines; run `revit_capture_…` →
-      localized filename line.
+      button tooltip, Settings + Language buttons.
 - [ ] History: open → column headers, toolbar, filters, detail pane, section
       headers localized; re-run a `send_code` entry → confirm dialog +
       redaction warnings localized; Summary column re-renders on language
       switch.
-- [ ] Dialogs: Copy Connection Info toast/dialog text; baked-slot empty
-      message; Bake Inbox window (title, instruction, empty state).
+- [ ] Dialogs: Copy Connection Info dialog text.
 - [ ] MCP-facing check: `tools/list` names/descriptions and error payloads
       remain English.
 

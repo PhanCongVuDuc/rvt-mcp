@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Microsoft.Data.Sqlite;
 using Newtonsoft.Json.Linq;
 using RvtMcp.Plugin;
 using Xunit;
@@ -63,56 +62,6 @@ namespace RvtMcp.Tests
             Assert.Equal(3, spill.RecordCount);
             Assert.Equal("ndjson", spill.Format);
             Assert.Contains("rolledBack", spill.Schema["_root"]!.Values<string>());
-        }
-
-        [Fact]
-        public void Sqlite_spill_relationalizes_collections_with_typed_columns_and_json_preview()
-        {
-            var writer = new ResponseSpillWriter(_directory);
-            var payload = new JObject
-            {
-                ["projectName"] = "Tower A",
-                ["totalRooms"] = 2,
-                ["rooms"] = new JArray(
-                    new JObject
-                    {
-                        ["elementId"] = 101L,
-                        ["name"] = "Lobby",
-                        ["areaMsq"] = 12.5,
-                        ["boundary_materials"] = new JArray(new JObject
-                        {
-                            ["element_id"] = 501L,
-                            ["material_names"] = new JArray("Concrete", "Paint")
-                        })
-                    },
-                    new JObject { ["elementId"] = 102L, ["name"] = "Office", ["areaMsq"] = 20.0 })
-            };
-
-            var spill = writer.Write("export_room_data", payload, ResponseSpillFormat.Sqlite);
-
-            using var connection = new SqliteConnection("Data Source=" + spill.Path + ";Mode=ReadOnly");
-            connection.Open();
-            using var count = connection.CreateCommand();
-            count.CommandText = "SELECT COUNT(*) FROM \"rooms\"";
-            Assert.Equal(2L, (long)count.ExecuteScalar()!);
-
-            using var columns = connection.CreateCommand();
-            columns.CommandText = "SELECT name, type FROM pragma_table_info('rooms') ORDER BY cid";
-            using var reader = columns.ExecuteReader();
-            var typedColumns = new System.Collections.Generic.Dictionary<string, string>();
-            while (reader.Read()) typedColumns[reader.GetString(0)] = reader.GetString(1);
-            Assert.Equal("INTEGER", typedColumns["elementId"]);
-            Assert.Equal("TEXT", typedColumns["name"]);
-            Assert.Equal("REAL", typedColumns["areaMsq"]);
-            Assert.Contains("rooms", spill.Schema.Properties().Select(p => p.Name));
-            Assert.Contains("rooms_boundary_materials", spill.Schema.Properties().Select(p => p.Name));
-            Assert.Contains("rooms_boundary_materials_material_names", spill.Schema.Properties().Select(p => p.Name));
-            using var nestedCount = connection.CreateCommand();
-            nestedCount.CommandText = "SELECT COUNT(*) FROM \"rooms_boundary_materials_material_names\" WHERE \"_parent_row\" = 0";
-            Assert.Equal(2L, (long)nestedCount.ExecuteScalar()!);
-            Assert.StartsWith("{", spill.Preview);
-            Assert.Equal(5, spill.RecordCount);
-            Assert.Equal("sqlite", spill.Format);
         }
 
         [Fact]
@@ -249,20 +198,6 @@ namespace RvtMcp.Tests
 
             Assert.True(File.Exists(spill.Path));
             Assert.Equal(61, Directory.GetFiles(_directory).Length);
-        }
-
-        [Fact]
-        public void SQLite_schema_is_bounded_so_even_extreme_dynamic_columns_keep_envelope_under_budget()
-        {
-            var row = new JObject();
-            for (var i = 0; i < 1000; i++)
-                row["column_" + i + "_" + new string('x', 800)] = i;
-            var payload = new JObject { ["records"] = new JArray(row) };
-
-            var spill = new ResponseSpillWriter(_directory).Write("get_material_takeoff", payload, ResponseSpillFormat.Sqlite);
-
-            Assert.True(spill.Envelope.Value<bool?>("schema_truncated") ?? false);
-            Assert.True(Encoding.UTF8.GetByteCount(spill.Envelope.ToString(Newtonsoft.Json.Formatting.None)) < ResponseSizeGuard.EnforcementBudgetBytes);
         }
 
         public void Dispose()

@@ -3,6 +3,7 @@ using Xunit;
 
 namespace RvtMcp.Tests
 {
+    [Collection("ToolCatalogStore")]
     public sealed class CatalogOwnershipTests
     {
         [Fact]

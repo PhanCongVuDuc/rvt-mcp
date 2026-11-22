@@ -13,42 +13,16 @@ namespace RvtMcp.Plugin
     }
 
     /// <summary>
-    /// Boundary policy for the eight approved bulk commands and arbitrary-code output.
+    /// Spill policy: only oversized arbitrary-code (send_code) output goes to a local file.
     /// All other commands retain the inline response-size policy.
     /// </summary>
     public static class ResponseSpillPolicy
     {
-        private static readonly IReadOnlyDictionary<string, ResponseSpillFormat> OptInFormats =
-            new Dictionary<string, ResponseSpillFormat>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["compute_room_finishes"] = ResponseSpillFormat.Sqlite,
-                ["export_room_data"] = ResponseSpillFormat.Sqlite,
-                ["get_material_takeoff"] = ResponseSpillFormat.Sqlite,
-                ["workflow_takeoff_report"] = ResponseSpillFormat.Sqlite,
-                ["batch_execute"] = ResponseSpillFormat.Ndjson,
-                ["export_shared_parameter_file"] = ResponseSpillFormat.Json,
-                ["run_baked_tool"] = ResponseSpillFormat.Auto,
-                ["workflow_data_roundtrip"] = ResponseSpillFormat.Ndjson
-            };
-
         public static ResponseSpillDecision Evaluate(string? commandName, string? paramsJson, int compactResponseBytes,
             int budgetBytes = ResponseSizeGuard.EnforcementBudgetBytes, bool automaticSpill = true)
         {
             var command = commandName ?? string.Empty;
-            var output = ReadOutputMode(paramsJson);
-            if (OptInFormats.TryGetValue(command, out var format)
-                && string.Equals(output, "file", StringComparison.OrdinalIgnoreCase))
-            {
-                return new ResponseSpillDecision
-                {
-                    ShouldSpill = true,
-                    Automatic = false,
-                    Format = format
-                };
-            }
-
-            if ((string.Equals(command, "send_code_to_revit", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(command, "run_baked_tool", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(command, "send_code_to_revit", StringComparison.OrdinalIgnoreCase)
                 && automaticSpill && compactResponseBytes > budgetBytes)
             {
                 return new ResponseSpillDecision
@@ -63,14 +37,13 @@ namespace RvtMcp.Plugin
             {
                 ShouldSpill = false,
                 Automatic = false,
-                Format = format
+                Format = ResponseSpillFormat.Auto
             };
         }
 
         public static object? SelectPayload(string? commandName, object? data)
         {
-            if (!string.Equals(commandName, "send_code_to_revit", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(commandName, "run_baked_tool", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(commandName, "send_code_to_revit", StringComparison.OrdinalIgnoreCase))
             {
                 return data;
             }
@@ -83,12 +56,5 @@ namespace RvtMcp.Plugin
                 : data;
         }
 
-        private static string ReadOutputMode(string? paramsJson)
-        {
-            if (string.IsNullOrWhiteSpace(paramsJson))
-                return "inline";
-            try { return JObject.Parse(paramsJson ?? "{}").Value<string>("output") ?? "inline"; }
-            catch { return "inline"; }
-        }
     }
 }

@@ -8,11 +8,8 @@ using Newtonsoft.Json.Linq;
 namespace RvtMcp.Plugin
 {
     /// <summary>
-    /// A9 3-layer config (aspect #3 §A9). Single POCO read by both processes:
-    /// Server consumes <see cref="Target"/> / <see cref="Toolsets"/> / <see cref="ReadOnly"/>;
-    /// Plugin consumes <see cref="AllowLanBind"/> / <see cref="EnableToolbaker"/>;
-    /// ToolBaker adaptive services consume <see cref="EnableAdaptiveBake"/> /
-    /// <see cref="CacheSendCodeBodies"/>.
+    /// Single POCO read by both processes: the server consumes <see cref="Target"/> /
+    /// <see cref="Toolsets"/> / <see cref="ReadOnly"/>; the plugin consumes <see cref="AllowLanBind"/>.
     ///
     /// Precedence (high → low): CLI args > env vars (BIMWRIGHT_*) > JSON file.
     /// Fields stay nullable so "not set" is distinguishable from "explicitly default-valued";
@@ -25,16 +22,11 @@ namespace RvtMcp.Plugin
         public const string EnvTools                     = "BIMWRIGHT_TOOLS";
         public const string EnvReadOnly                  = "BIMWRIGHT_READ_ONLY";
         public const string EnvAllowLanBind              = "BIMWRIGHT_ALLOW_LAN_BIND";
-        public const string EnvEnableToolbaker           = "BIMWRIGHT_ENABLE_TOOLBAKER";
-        public const string EnvEnableAdaptiveBake        = "BIMWRIGHT_ENABLE_ADAPTIVE_BAKE";
         public const string EnvCacheSendCodeBodies       = "BIMWRIGHT_CACHE_SEND_CODE_BODIES";
         public const string EnvEnableToast               = "BIMWRIGHT_ENABLE_TOAST";
-        public const string EnvPersistSendCodeBodies     = "BIMWRIGHT_PERSIST_SEND_CODE_BODIES";
-        public const string EnvPersistSendCodeBodiesTtl  = "BIMWRIGHT_PERSIST_SEND_CODE_BODIES_TTL";
         public const string EnvUiLanguage                = "BIMWRIGHT_UI_LANGUAGE";
         public const string EnvEnableSendCode = "BIMWRIGHT_ENABLE_SEND_CODE";
         public const string EnvEnableCallLog = "BIMWRIGHT_ENABLE_CALL_LOG";
-        public const string EnvEnableChangeHistory = "BIMWRIGHT_ENABLE_CHANGE_HISTORY";
         public const string EnvEnableResponseGuard = "BIMWRIGHT_ENABLE_RESPONSE_GUARD";
         public const string EnvResponseWarnBytes = "BIMWRIGHT_RESPONSE_WARN_BYTES";
         public const string EnvResponseStrongWarnBytes = "BIMWRIGHT_RESPONSE_STRONG_WARN_BYTES";
@@ -44,13 +36,9 @@ namespace RvtMcp.Plugin
 
         public const bool DefaultReadOnly                  = false;
         public const bool DefaultAllowLanBind              = false;
-        public const bool DefaultEnableToolbaker           = true;
-        public const bool DefaultEnableAdaptiveBake        = false;
         public const bool DefaultCacheSendCodeBodies       = false;
         public const bool DefaultEnableToast               = true;
-        public const bool DefaultPersistSendCodeBodies     = false;
         public const int DefaultToastIdleSeconds           = 20;
-        public const int DefaultPersistSendCodeBodiesHours = 4;
         public const int DefaultSpillRetentionHours        = 36;
         public const int MaxSpillRetentionHours            = 24 * 365;
 
@@ -74,9 +62,6 @@ namespace RvtMcp.Plugin
 
         [JsonProperty("enableCallLog")]
         public bool? EnableCallLog { get; set; }
-
-        [JsonProperty("enableChangeHistory")]
-        public bool? EnableChangeHistory { get; set; }
 
         [JsonProperty("enableResponseGuard")]
         public bool? EnableResponseGuard { get; set; }
@@ -103,12 +88,6 @@ namespace RvtMcp.Plugin
         [JsonProperty("allowLanBind")]
         public bool? AllowLanBind { get; set; }
 
-        [JsonProperty("enableToolbaker")]
-        public bool? EnableToolbaker { get; set; }
-
-        [JsonProperty("enableAdaptiveBake")]
-        public bool? EnableAdaptiveBake { get; set; }
-
         [JsonProperty("cacheSendCodeBodies")]
         public bool? CacheSendCodeBodies { get; set; }
 
@@ -118,23 +97,6 @@ namespace RvtMcp.Plugin
         /// <summary>Seconds of quiet before the next call raises a new Windows notification. Settings accepts 10, 20, 30, or 60 seconds.</summary>
         [JsonProperty("toastIdleSeconds")]
         public int? ToastIdleSeconds { get; set; }
-
-        [JsonProperty("persistSendCodeBodies")]
-        public bool? PersistSendCodeBodies { get; set; }
-
-        [JsonProperty("persistSendCodeBodiesUntil")]
-        public string PersistSendCodeBodiesUntil { get; set; }
-
-        /// <summary>Journal retention duration in hours. Settings accepts 1 through 48 hours.</summary>
-        [JsonProperty("persistSendCodeBodiesHours")]
-        public int? PersistSendCodeBodiesHours { get; set; }
-
-        /// <summary>
-        /// Set when TTL auto-expires. Sticky env=1 must not re-enable until CLI
-        /// (or an explicit new enable that clears this flag) stamps a fresh Until.
-        /// </summary>
-        [JsonProperty("persistSendCodeBodiesRequiresExplicitEnable")]
-        public bool? PersistSendCodeBodiesRequiresExplicitEnable { get; set; }
 
         /// <summary>
         /// Plugin UI language override: "auto" or a shipped locale code (en, ja, …).
@@ -161,7 +123,6 @@ namespace RvtMcp.Plugin
         public bool ReadOnlyOrDefault              => ReadOnly           ?? DefaultReadOnly;
         public bool EnableSendCodeOrDefault => !ReadOnlyOrDefault && (EnableSendCode ?? true);
         public bool EnableCallLogOrDefault => EnableCallLog ?? false;
-        public bool EnableChangeHistoryOrDefault => EnableChangeHistory ?? true;
         public bool EnableResponseGuardOrDefault => EnableResponseGuard ?? true;
         public int ResponseWarnBytesOrDefault => PositiveBytes(ResponseWarnBytes, 64 * 1024, "responseWarnBytes");
         public int ResponseStrongWarnBytesOrDefault => PositiveBytes(ResponseStrongWarnBytes, 256 * 1024, "responseStrongWarnBytes");
@@ -211,7 +172,6 @@ namespace RvtMcp.Plugin
                 ReadOnly = ReadOnlyOrDefault,
                 EnableSendCode = EnableSendCodeOrDefault,
                 EnableCallLog = EnableCallLogOrDefault,
-                EnableChangeHistory = EnableChangeHistoryOrDefault,
                 EnableResponseGuard = EnableResponseGuardOrDefault,
                 ResponseWarnBytes = ResponseWarnBytesOrDefault,
                 ResponseStrongWarnBytes = ResponseStrongWarnBytesOrDefault,
@@ -229,7 +189,6 @@ namespace RvtMcp.Plugin
             result.ReadOnly = ReadOnlyOrDefault || runtime.ReadOnlyOrDefault;
             result.EnableSendCode = EnableSendCodeOrDefault && runtime.EnableSendCodeOrDefault;
             result.EnableCallLog = runtime.EnableCallLog ?? EnableCallLog;
-            result.EnableChangeHistory = runtime.EnableChangeHistory ?? EnableChangeHistory;
             result.EnableResponseGuard = runtime.EnableResponseGuard ?? EnableResponseGuard;
             result.ResponseWarnBytes = runtime.ResponseWarnBytes ?? ResponseWarnBytes;
             result.ResponseStrongWarnBytes = runtime.ResponseStrongWarnBytes ?? ResponseStrongWarnBytes;
@@ -240,12 +199,9 @@ namespace RvtMcp.Plugin
             return result;
         }
         public bool AllowLanBindOrDefault          => AllowLanBind       ?? DefaultAllowLanBind;
-        public bool EnableToolbakerOrDefault       => EnableToolbaker    ?? DefaultEnableToolbaker;
-        public bool EnableAdaptiveBakeOrDefault    => EnableAdaptiveBake ?? DefaultEnableAdaptiveBake;
         public bool CacheSendCodeBodiesOrDefault  => CacheSendCodeBodies ?? DefaultCacheSendCodeBodies;
         public bool EnableToastOrDefault          => EnableToast       ?? DefaultEnableToast;
         public int ToastIdleSecondsOrDefault      => NormalizeToastIdleSeconds(ToastIdleSeconds);
-        public int PersistSendCodeBodiesHoursOrDefault => NormalizePersistSendCodeBodiesHours(PersistSendCodeBodiesHours);
 
         public static int NormalizeToastIdleSeconds(int? seconds)
         {
@@ -259,19 +215,6 @@ namespace RvtMcp.Plugin
                 default:
                     return DefaultToastIdleSeconds;
             }
-        }
-
-        public static int NormalizePersistSendCodeBodiesHours(int? hours)
-        {
-            return hours >= 1 && hours <= 48 ? hours.Value : DefaultPersistSendCodeBodiesHours;
-        }
-
-        public bool IsPersistSendCodeBodiesActive(DateTimeOffset? now = null)
-        {
-            if (PersistSendCodeBodies != true) return false;
-            if (!DateTimeOffset.TryParse(PersistSendCodeBodiesUntil, out var until)) return false;
-            until = until.ToUniversalTime();
-            return (now ?? DateTimeOffset.UtcNow) < until;
         }
 
         public static string DefaultConfigFilePath =>
@@ -317,22 +260,6 @@ namespace RvtMcp.Plugin
             var path = configFilePath ?? ConfigFilePathOverride ?? DefaultConfigFilePath;
             var config = LoadFromJsonFile(path)
                          ?? new RvtMcpConfig();
-
-            // Check expiry on Load — clear and suppress sticky env re-enable.
-            if (config.PersistSendCodeBodies == true)
-            {
-                var utcNow = DateTimeOffset.UtcNow;
-                if (string.IsNullOrEmpty(config.PersistSendCodeBodiesUntil)
-                    || !DateTimeOffset.TryParse(config.PersistSendCodeBodiesUntil, out var until)
-                    || utcNow >= until.ToUniversalTime())
-                {
-                    config.PersistSendCodeBodies = null;
-                    config.PersistSendCodeBodiesUntil = null;
-                    config.PersistSendCodeBodiesRequiresExplicitEnable = true;
-                    string cleanupError;
-                    TryClearPersistSendCodeBodies(out cleanupError, path, requireExplicitEnable: true);
-                }
-            }
 
             ApplyEnvVars(config, envLookup, path);
             if (args != null) ApplyCliArgs(config, args, path);
@@ -389,7 +316,6 @@ namespace RvtMcp.Plugin
 
             config.EnableSendCode = ParseBool(lookup(EnvEnableSendCode)) ?? config.EnableSendCode;
             config.EnableCallLog = ParseBool(lookup(EnvEnableCallLog)) ?? config.EnableCallLog;
-            config.EnableChangeHistory = ParseBool(lookup(EnvEnableChangeHistory)) ?? config.EnableChangeHistory;
             config.EnableResponseGuard = ParseBool(lookup(EnvEnableResponseGuard)) ?? config.EnableResponseGuard;
             config.ResponseWarnBytes = ParseBytes(lookup(EnvResponseWarnBytes), EnvResponseWarnBytes) ?? config.ResponseWarnBytes;
             config.ResponseStrongWarnBytes = ParseBytes(lookup(EnvResponseStrongWarnBytes), EnvResponseStrongWarnBytes) ?? config.ResponseStrongWarnBytes;
@@ -399,12 +325,6 @@ namespace RvtMcp.Plugin
 
             var allowLan = ParseBool(lookup(EnvAllowLanBind));
             if (allowLan.HasValue) config.AllowLanBind = allowLan;
-
-            var enableBaker = ParseBool(lookup(EnvEnableToolbaker));
-            if (enableBaker.HasValue) config.EnableToolbaker = enableBaker;
-
-            var adaptiveBake = ParseBool(lookup(EnvEnableAdaptiveBake));
-            if (adaptiveBake.HasValue) config.EnableAdaptiveBake = adaptiveBake;
 
             var cacheBodies = ParseBool(lookup(EnvCacheSendCodeBodies));
             if (cacheBodies.HasValue) config.CacheSendCodeBodies = cacheBodies;
@@ -417,49 +337,6 @@ namespace RvtMcp.Plugin
             var uiLanguage = lookup(EnvUiLanguage);
             if (!string.IsNullOrWhiteSpace(uiLanguage)) config.UiLanguage = uiLanguage.Trim();
 
-            var persistEnv = lookup(EnvPersistSendCodeBodies);
-            if (!string.IsNullOrWhiteSpace(persistEnv))
-            {
-                var val = ParseBool(persistEnv);
-                if (val == true)
-                {
-                    // Already active with a valid Until — do not reset the clock on every Load.
-                    // After TTL expiry, sticky env=1 must not revive without explicit CLI enable.
-                    if (!config.IsPersistSendCodeBodiesActive()
-                        && config.PersistSendCodeBodiesRequiresExplicitEnable != true)
-                    {
-                        var ttlStr = lookup(EnvPersistSendCodeBodiesTtl);
-                        var ttl = TimeSpan.FromHours(config.PersistSendCodeBodiesHoursOrDefault);
-                        if (!string.IsNullOrWhiteSpace(ttlStr) && PersistSendCodeTtl.TryParse(ttlStr, out var parsedTtl))
-                        {
-                            var clamped = PersistSendCodeTtl.Clamp(parsedTtl);
-                            if (clamped != parsedTtl)
-                                Console.Error.WriteLine($"[rvt-mcp] persist send_code TTL '{ttlStr}' clamped to {FormatTtl(clamped)} (allowed 1h–2d).");
-                            ttl = clamped;
-                        }
-                        var until = DateTimeOffset.UtcNow.Add(ttl);
-                        config.PersistSendCodeBodies = true;
-                        config.PersistSendCodeBodiesUntil = PersistSendCodeTtl.FormatIsoUntil(until);
-                        config.PersistSendCodeBodiesRequiresExplicitEnable = false;
-                        if (allowPersistenceWriteBack)
-                        {
-                            string saveError;
-                            TrySavePersistSendCodeBodies(true, until, out saveError, configFilePath);
-                        }
-                    }
-                }
-                else if (val == false)
-                {
-                    config.PersistSendCodeBodies = false;
-                    config.PersistSendCodeBodiesUntil = null;
-                    config.PersistSendCodeBodiesRequiresExplicitEnable = null;
-                    if (allowPersistenceWriteBack)
-                    {
-                        string clearError;
-                        TryClearPersistSendCodeBodies(out clearError, configFilePath, requireExplicitEnable: false);
-                    }
-                }
-            }
         }
 
         internal static void ApplyCliArgs(RvtMcpConfig config, string[] args)
@@ -491,8 +368,6 @@ namespace RvtMcp.Plugin
                     case "--disable-send-code": config.EnableSendCode = false; break;
                     case "--enable-call-log": config.EnableCallLog = true; break;
                     case "--disable-call-log": config.EnableCallLog = false; break;
-                    case "--enable-change-history": config.EnableChangeHistory = true; break;
-                    case "--disable-change-history": config.EnableChangeHistory = false; break;
                     case "--enable-response-guard": config.EnableResponseGuard = true; break;
                     case "--disable-response-guard": config.EnableResponseGuard = false; break;
                     case "--response-warn-bytes": config.ResponseWarnBytes = ReadBytes(args, ref i); break;
@@ -505,65 +380,11 @@ namespace RvtMcp.Plugin
                     case "--allow-lan-bind":
                         config.AllowLanBind = true;
                         break;
-                    case "--enable-toolbaker":
-                        config.EnableToolbaker = true;
-                        break;
-                    case "--disable-toolbaker":
-                        config.EnableToolbaker = false;
-                        break;
-                    case "--enable-adaptive-bake":
-                        config.EnableAdaptiveBake = true;
-                        break;
-                    case "--disable-adaptive-bake":
-                        config.EnableAdaptiveBake = false;
-                        break;
                     case "--cache-send-code-bodies":
                         config.CacheSendCodeBodies = true;
                         break;
                     case "--no-cache-send-code-bodies":
                         config.CacheSendCodeBodies = false;
-                        break;
-                    case "--persist-send-code-bodies":
-                        {
-                            var ttl = TimeSpan.FromHours(config.PersistSendCodeBodiesHoursOrDefault);
-                            var until = DateTimeOffset.UtcNow.Add(ttl);
-                            config.PersistSendCodeBodies = true;
-                            config.PersistSendCodeBodiesUntil = PersistSendCodeTtl.FormatIsoUntil(until);
-                            config.PersistSendCodeBodiesRequiresExplicitEnable = false;
-                            string saveError;
-                            TrySavePersistSendCodeBodies(true, until, out saveError, configFilePath);
-                        }
-                        break;
-                    case "--persist-send-code-bodies-for":
-                        if (i + 1 < args.Length)
-                        {
-                            var ttlStr = args[++i];
-                            var ttl = TimeSpan.FromHours(config.PersistSendCodeBodiesHoursOrDefault);
-                            if (PersistSendCodeTtl.TryParse(ttlStr, out var parsedTtl))
-                            {
-                                var clamped = PersistSendCodeTtl.Clamp(parsedTtl);
-                                if (clamped != parsedTtl)
-                                    Console.Error.WriteLine($"[rvt-mcp] persist send_code TTL '{ttlStr}' clamped to {FormatTtl(clamped)} (allowed 1h–2d).");
-                                ttl = clamped;
-                            }
-                            else
-                            {
-                                Console.Error.WriteLine($"[rvt-mcp] invalid persist send_code TTL '{ttlStr}'; using default {FormatTtl(PersistSendCodeTtl.Default)}.");
-                            }
-                            var until = DateTimeOffset.UtcNow.Add(ttl);
-                            config.PersistSendCodeBodies = true;
-                            config.PersistSendCodeBodiesUntil = PersistSendCodeTtl.FormatIsoUntil(until);
-                            config.PersistSendCodeBodiesRequiresExplicitEnable = false;
-                            string saveError;
-                            TrySavePersistSendCodeBodies(true, until, out saveError, configFilePath);
-                        }
-                        break;
-                    case "--no-persist-send-code-bodies":
-                        config.PersistSendCodeBodies = false;
-                        config.PersistSendCodeBodiesUntil = null;
-                        config.PersistSendCodeBodiesRequiresExplicitEnable = null;
-                        string clearError;
-                        TryClearPersistSendCodeBodies(out clearError, configFilePath, requireExplicitEnable: false);
                         break;
                 }
             }
@@ -634,8 +455,6 @@ namespace RvtMcp.Plugin
         public sealed class SettingsPatch
         {
             public int? ToastIdleSeconds { get; set; }
-            public int? PersistSendCodeBodiesHours { get; set; }
-            public bool? PersistSendCodeBodies { get; set; }
             public bool? CacheSendCodeBodies { get; set; }
         }
 
@@ -656,7 +475,6 @@ namespace RvtMcp.Plugin
         {
             public IList<string> Applied { get; } = new List<string>();
             public IList<ApplyFailure> Failed { get; } = new List<ApplyFailure>();
-            public bool JournalWasExpired { get; internal set; }
         }
 
         /// <summary>
@@ -696,99 +514,6 @@ namespace RvtMcp.Plugin
             return TryUpdateConfig(configFilePath, root => root["uiLanguage"] = code, out error);
         }
 
-        public static bool TrySavePersistSendCodeBodiesHours(int hours, out string error, string configFilePath = null)
-        {
-            var normalized = NormalizePersistSendCodeBodiesHours(hours);
-            return TryUpdateConfig(configFilePath, root =>
-            {
-                root["persistSendCodeBodiesHours"] = normalized;
-                var now = DateTimeOffset.UtcNow;
-                var active = root.Value<bool?>("persistSendCodeBodies") == true
-                    && DateTimeOffset.TryParse(root.Value<string>("persistSendCodeBodiesUntil"), out var until)
-                    && now < until.ToUniversalTime();
-                if (active)
-                    root["persistSendCodeBodiesUntil"] = PersistSendCodeTtl.FormatIsoUntil(now.AddHours(normalized));
-            }, out error);
-        }
-
-        public static void SavePersistSendCodeBodies(bool enabled, DateTimeOffset? untilUtc, string configFilePath = null)
-        {
-            string ignoredError;
-            TrySavePersistSendCodeBodies(enabled, untilUtc, out ignoredError, configFilePath);
-        }
-
-        public static bool TrySavePersistSendCodeBodies(
-            bool enabled,
-            DateTimeOffset? untilUtc,
-            out string error,
-            string configFilePath = null)
-        {
-            return TryUpdateConfig(configFilePath, root =>
-            {
-                root["persistSendCodeBodies"] = enabled;
-                if (enabled && untilUtc.HasValue)
-                {
-                    root["persistSendCodeBodiesUntil"] = PersistSendCodeTtl.FormatIsoUntil(untilUtc.Value);
-                    root["persistSendCodeBodiesHours"] = NormalizePersistSendCodeBodiesHours(
-                        root.Value<int?>("persistSendCodeBodiesHours"));
-                    root.Remove("persistSendCodeBodiesRequiresExplicitEnable");
-                }
-                else
-                {
-                    // Turning Off clears only the active Until. The selected duration is
-                    // deliberately retained for the next explicit enable.
-                    root.Remove("persistSendCodeBodiesUntil");
-                }
-            }, out error);
-        }
-
-        public static void ClearPersistSendCodeBodies(string configFilePath = null, bool requireExplicitEnable = false)
-        {
-            string ignoredError;
-            TryClearPersistSendCodeBodies(out ignoredError, configFilePath, requireExplicitEnable);
-        }
-
-        public static bool TryClearPersistSendCodeBodies(
-            out string error,
-            string configFilePath = null,
-            bool requireExplicitEnable = false)
-        {
-            string path;
-            bool explicitPath;
-            try
-            {
-                path = ResolveConfigPath(configFilePath, out explicitPath);
-            }
-            catch (Exception ex)
-            {
-                error = ex.Message;
-                return false;
-            }
-
-            var directory = Path.GetDirectoryName(path);
-            if (string.IsNullOrEmpty(directory) || !IsAllowedConfigDirectory(directory, explicitPath))
-            {
-                error = "The configuration path is outside the current profile.";
-                return false;
-            }
-
-            if (!File.Exists(path) && !requireExplicitEnable)
-            {
-                error = null;
-                return true;
-            }
-
-            return TryUpdateConfig(configFilePath, root =>
-            {
-                root.Remove("persistSendCodeBodies");
-                root.Remove("persistSendCodeBodiesUntil");
-                if (requireExplicitEnable)
-                    root["persistSendCodeBodiesRequiresExplicitEnable"] = true;
-                else
-                    root.Remove("persistSendCodeBodiesRequiresExplicitEnable");
-            }, out error);
-        }
-
         /// <summary>
         /// Apply the Settings dialog's staged values one key at a time. Each operation
         /// rereads the file immediately before writing, so an external edit made while
@@ -819,9 +544,7 @@ namespace RvtMcp.Plugin
                 }
             }
 
-            if (patch.PersistSendCodeBodiesHours.HasValue
-                || patch.PersistSendCodeBodies.HasValue
-                || patch.CacheSendCodeBodies.HasValue)
+            if (patch.CacheSendCodeBodies.HasValue)
             {
                 string error;
                 var ok = TryUpdateConfig(configFilePath, root =>
@@ -831,63 +554,11 @@ namespace RvtMcp.Plugin
                     if (toastIdleApplied)
                         root["toastIdleSeconds"] = NormalizeToastIdleSeconds(patch.ToastIdleSeconds);
 
-                    if (patch.CacheSendCodeBodies.HasValue)
-                        root["cacheSendCodeBodies"] = patch.CacheSendCodeBodies.Value;
-
-                    var now = DateTimeOffset.UtcNow;
-                    var currentHours = NormalizePersistSendCodeBodiesHours(root.Value<int?>("persistSendCodeBodiesHours"));
-                    var hours = patch.PersistSendCodeBodiesHours.HasValue
-                        ? NormalizePersistSendCodeBodiesHours(patch.PersistSendCodeBodiesHours.Value)
-                        : currentHours;
-                    var currentEnabled = root.Value<bool?>("persistSendCodeBodies") == true;
-                    var currentActive = currentEnabled
-                        && DateTimeOffset.TryParse(root.Value<string>("persistSendCodeBodiesUntil"), out var until)
-                        && now < until.ToUniversalTime();
-
-                    if (patch.PersistSendCodeBodiesHours.HasValue)
-                        root["persistSendCodeBodiesHours"] = hours;
-                    if (patch.PersistSendCodeBodies.HasValue)
-                    {
-                        var enabled = patch.PersistSendCodeBodies.Value;
-                        root["persistSendCodeBodies"] = enabled;
-                        if (enabled)
-                        {
-                            root["persistSendCodeBodiesUntil"] = PersistSendCodeTtl.FormatIsoUntil(now.AddHours(hours));
-                            root.Remove("persistSendCodeBodiesRequiresExplicitEnable");
-                        }
-                        else
-                        {
-                            root.Remove("persistSendCodeBodiesUntil");
-                            root.Remove("persistSendCodeBodiesRequiresExplicitEnable");
-                        }
-                    }
-                    else if (patch.PersistSendCodeBodiesHours.HasValue && currentActive)
-                    {
-                        // A duration edit re-arms an active journal from Apply time. An
-                        // already expired journal is left expired and is never revived by
-                        // changing an unrelated staged value.
-                        root["persistSendCodeBodiesUntil"] = PersistSendCodeTtl.FormatIsoUntil(now.AddHours(hours));
-                    }
-                    else if (patch.PersistSendCodeBodiesHours.HasValue && currentEnabled)
-                    {
-                        result.JournalWasExpired = true;
-                    }
+                    root["cacheSendCodeBodies"] = patch.CacheSendCodeBodies.Value;
                 }, out error);
 
-                if (ok && patch.PersistSendCodeBodiesHours.HasValue)
-                    result.Applied.Add("persistSendCodeBodiesHours");
-                else if (!ok && patch.PersistSendCodeBodiesHours.HasValue)
-                    result.Failed.Add(new ApplyFailure("persistSendCodeBodiesHours", error));
-
-                if (patch.PersistSendCodeBodies.HasValue && ok)
-                    result.Applied.Add("persistSendCodeBodies");
-                else if (patch.PersistSendCodeBodies.HasValue && !ok)
-                    result.Failed.Add(new ApplyFailure("persistSendCodeBodies", error));
-
-                if (patch.CacheSendCodeBodies.HasValue && ok)
-                    result.Applied.Add("cacheSendCodeBodies");
-                else if (patch.CacheSendCodeBodies.HasValue && !ok)
-                    result.Failed.Add(new ApplyFailure("cacheSendCodeBodies", error));
+                if (ok) result.Applied.Add("cacheSendCodeBodies");
+                else result.Failed.Add(new ApplyFailure("cacheSendCodeBodies", error));
             }
 
             return result;
@@ -908,8 +579,7 @@ namespace RvtMcp.Plugin
                 using (var textReader = new StringReader(File.ReadAllText(path)))
                 using (var jsonReader = new JsonTextReader(textReader)
                 {
-                    // Until is a persisted string. Do not let Newtonsoft turn it into
-                    // a local DateTime and then rewrite it with a different offset.
+                    // Keep date-like strings as written instead of re-serialising them with a local offset.
                     DateParseHandling = DateParseHandling.None,
                 })
                 {
@@ -1034,13 +704,5 @@ namespace RvtMcp.Plugin
                 || fullCandidate.StartsWith(fullRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static string FormatTtl(TimeSpan ttl)
-        {
-            if (ttl.TotalDays >= 1 && Math.Abs(ttl.TotalDays - Math.Round(ttl.TotalDays)) < 0.001)
-                return $"{(int)Math.Round(ttl.TotalDays)}d";
-            if (ttl.TotalHours >= 1 && Math.Abs(ttl.TotalHours - Math.Round(ttl.TotalHours)) < 0.001)
-                return $"{(int)Math.Round(ttl.TotalHours)}h";
-            return $"{(int)Math.Round(ttl.TotalMinutes)}m";
-        }
     }
 }

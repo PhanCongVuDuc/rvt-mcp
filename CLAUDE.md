@@ -50,14 +50,13 @@ src/
 │   └── Program.cs            # MCP tools + transport client to plugin shells
 │
 ├── shared/                   # Source shared by all plugin shells (glob-included)
-│   ├── Handlers/             # One file per command (send_code, create_grid, batch_execute, …)
+│   ├── Handlers/             # One file per command (send_code, open_model, capture_view_image, …)
 │   ├── Commands/             # Ribbon button commands
 │   ├── Config/               # Configuration loaders
 │   ├── Infrastructure/       # CommandDispatcher, McpEventHandler, ResponseSizeGuard, …
 │   ├── Transport/            # TcpTransportServer, PipeTransportServer, ITransportServer
 │   ├── Logging/              # McpLogger
 │   ├── Security/             # AuthToken, SecretMasker
-│   ├── ToolBaker/            # Self-evolution engine (list_baked_tools, run_baked_tool, adaptive suggestions)
 │   └── Views/                # HistoryWindow
 │
 ├── plugin-r22/               # Revit 2022 shell (.NET 4.8, TCP)
@@ -81,7 +80,7 @@ dotnet build src/RvtMcp.sln -c Debug
 ```
 
 Each shell auto-deploys to `%APPDATA%\Autodesk\Revit\Addins\<year>\RvtMcp\` for its target year, plus a matching `RvtMcp.R<nn>.addin` manifest at the parent level.
-MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
+MCP Server runs from `src/server/bin/Debug/net8.0-windows10.0.19041.0/RvtMcp.Server.exe`.
 
 ## Key Patterns
 
@@ -90,7 +89,7 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 - ConcurrentQueue<PendingRequest> with per-request TaskCompletionSource
 - ExternalEvent.Raise() marshals to Revit UI thread
 - One live command per ExternalEvent (re-Raise if the queue still has work); skip completed TCS (timeout/cancel)
-- Wire responses: agent-visible warning from 64 KiB, strong warning above 256 KiB; past the ~700 KiB enforcement budget (compact bytes; headroom below the 1 MiB delivered ceiling) reads reject with command-specific scope hints and completed mutations return compact `success=true` summaries. Eight approved bulk tools support `output=inline|file` to `%LOCALAPPDATA%\Bimwright\rvt-mcp\spill\`; `send_code` and oversized `run_baked_tool` output auto-spill. Spill files are local same-machine artifacts, kept 36h by default (`--spill-retention-hours`, `BIMWRIGHT_SPILL_RETENTION_HOURS`, `spillRetentionHours`; an invalid value uses 36). Age is the only reason to delete one: no file-count cap removes a file younger than the retention time.
+- Wire responses: agent-visible warning from 64 KiB, strong warning above 256 KiB; past the ~700 KiB enforcement budget (compact bytes; headroom below the 1 MiB delivered ceiling) reads reject with command-specific scope hints and completed mutations return compact `success=true` summaries. Oversized `send_code` output auto-spills to `%LOCALAPPDATA%\Bimwright\rvt-mcp\spill\`. Spill files are local same-machine artifacts, kept 36h by default (`--spill-retention-hours`, `BIMWRIGHT_SPILL_RETENTION_HOURS`, `spillRetentionHours`; an invalid value uses 36). Age is the only reason to delete one: no file-count cap removes a file younger than the retention time.
 - Shutdown: cancel all pending TCS, stop transport, dispose ExternalEvent
 
 ### Commands
@@ -101,11 +100,10 @@ MCP Server runs from `src/server/bin/Debug/net8.0/RvtMcp.Server.exe`.
 - Unit conversion: Revit internal (feet) → mm using SpecTypeId/ForgeTypeId
 
 ### MCP Tools
-- 235 Revit tools with `--toolsets all` (238 with adaptive bake). The bare binary defaults to **48** tools (`query,create,view,meta`); `install.ps1` seeds `rvtmcp.config.json` with `toolsets=all` so installed machines get the full surface. ALL MCP-facing names prefixed `revit_` (e.g. `revit_create_grid`). Server↔plugin wire command names stay unprefixed and unchanged.
-- Tools live in `[McpServerToolType, Toolset("<name>")]` classes grouped by domain (query, create, modify, delete, view, export, annotation, mep, schedule, sheets, materials, geometry, rooms, links, structural, lint, toolbaker, meta). Each tool = `[McpServerTool]` static method with param docs + examples.
-- Progressive disclosure (A3): default toolsets are `query,create,view,meta`. `--toolsets all` (or an explicit CSV) and `--read-only` gate the rest. `structural` is write-capable and **off** unless requested. `--read-only` filters individual tools by their document/file effects, including read tools within otherwise write-capable toolsets, and removes arbitrary code and baked-tool execution.
-- Tool Search (v0.5): server `instructions` field populated at startup (keyword-dense) so MCP clients can discover the surface — it was previously empty, so search returned nothing.
-- `revit_batch_execute` (A6): TransactionGroup-wrapped multi-command call, max 20 sub-commands. `SendToRevit()` helper: transport send + TCS await + 60s timeout (TCS completed on timeout so the UI thread skips the stale request).
+- This fork keeps 14 tools (README → Tools). ALL MCP-facing names are prefixed `revit_`; server↔plugin wire command names stay unprefixed.
+- Tools live in `[McpServerToolType, Toolset("<name>")]` classes: `query`, `view`, `export`, `meta`, `sheets`, all on by default. Each tool = `[McpServerTool]` static method. `--tools <csv>` narrows further; `--read-only` filters by each tool's document/file effects and removes `send_code`.
+- `SendToRevit()` helper: transport send + TCS await + 60s timeout (TCS completed on timeout so the UI thread skips the stale request).
+- Activity notifications are Windows notifications raised by the server (`ServerToast`), never drawn on Revit's UI thread.
 
 ## Revit 2022 Specifics
 

@@ -39,9 +39,7 @@ namespace RvtMcp.Tests
         public void Resolve_AdaptiveBakeFlags_DoNotChangeDefaultToolsets()
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig
-            {
-                EnableAdaptiveBake = true,
-                CacheSendCodeBodies = true,
+            { CacheSendCodeBodies = true,
             });
 
             Assert.Equal(ToolsetFilter.DefaultOn.OrderBy(s => s), set.OrderBy(s => s));
@@ -142,7 +140,6 @@ namespace RvtMcp.Tests
             var set = ToolsetFilter.Resolve(new RvtMcpConfig
             {
                 Toolsets = new List<string> { "toolbaker" },
-                EnableToolbaker = false,
             });
 
             Assert.DoesNotContain("toolbaker", set);
@@ -152,9 +149,7 @@ namespace RvtMcp.Tests
         public void Resolve_EnableToolbaker_DoesNotInjectToolbakerIntoNarrowDefaults()
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig
-            {
-                EnableToolbaker = true,
-            });
+            { });
 
             Assert.DoesNotContain("toolbaker", set);
         }
@@ -163,9 +158,7 @@ namespace RvtMcp.Tests
         public void Resolve_DisableToolbaker_RemovesToolbakerFromDefaults()
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig
-            {
-                EnableToolbaker = false,
-            });
+            { });
 
             Assert.DoesNotContain("toolbaker", set);
         }

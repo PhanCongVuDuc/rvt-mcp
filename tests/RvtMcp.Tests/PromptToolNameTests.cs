@@ -24,7 +24,6 @@ namespace RvtMcp.Tests
 
             var config = new RvtMcpConfig
             {
-                EnableAdaptiveBake = true,
                 Toolsets = new List<string> { "all" }
             };
             var enabled = RvtMcp.Server.ToolsetFilter.Resolve(config);

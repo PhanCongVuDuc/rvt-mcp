@@ -40,12 +40,6 @@ This file is the install protocol for an AI agent with permission to run PowerSh
 
 If the user explicitly says "skip the prompts, just install", still preview changes and verify the result; combine the two approval gates into one upfront approval. **Never silently skip preview or verify.**
 
-### Baked-tool routing
-
-When the user's request may match a personal baked tool, call list_baked_tools first.
-In v0.3.x baked tools never appear directly in native tools/list.
-Run accepted tools through run_baked_tool name=<tool_name>.
-
 ---
 
 ## Prerequisites (check first, stop if any are missing)
@@ -262,6 +256,5 @@ Rules: `security.*` keys are locked and can never be overridden. Keys not in `_a
 
 ## Honest scope
 
-rvt-mcp handles `revit_get_current_view_info`, `revit_batch_execute`, `revit_send_code_to_revit`, and 220+ other tools across Revit 2022–2027. Machines installed via `install.ps1` get the full surface by default (the installer seeds `toolsets=all` unless the user set their own list); a bare `rvt-mcp.exe` without that config defaults to `query` + `create` + `view` + `meta` only. It does not handle installing Revit, licensing, cloud sync, or any Autodesk account operations. If the user asks for those, point them at <https://www.autodesk.com/support/revit>.
+This fork of rvt-mcp exposes 14 tools across Revit 2022–2027 (see README → Tools); everything else goes through `revit_send_code_to_revit` or an add-in command. It does not handle installing Revit, licensing, cloud sync, or any Autodesk account operations. If the user asks for those, point them at <https://www.autodesk.com/support/revit>.
 
-For extending the tool surface at runtime, see ToolBaker in the main [README.md](README.md).

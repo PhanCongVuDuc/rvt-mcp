@@ -17,9 +17,6 @@ using Bimwright.Targeting;
 using RvtMcp.Plugin; // RvtMcpConfig
 using RvtMcp.Server.Prompts;
 using RvtMcp.ToolCatalog;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -46,11 +43,7 @@ namespace RvtMcp.Server
                 return;
             }
 
-            // A9 3-layer config precedence (JSON < env < CLI). The --target selector and
-            // transport mode (--http) stay as separate CLI parses for now; A3 toolsets
-            // gating uses RvtMcpConfig.
-            if (!LegacyDataMigration.TryMigrateOnce(Console.Error.WriteLine))
-            { Environment.ExitCode = 1; return; }
+            // Config precedence: JSON < env < CLI. --target stays a separate CLI parse.
             AuthToken.CleanupLegacyDiscoveryFiles();
             var config = RvtMcpConfig.Load(args);
             config.ValidateResponseLimits();
@@ -85,22 +78,7 @@ namespace RvtMcp.Server
             if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
                 ServerToast.Instance = ServerToast.TryCreate(config);
 
-            int httpIndex = Array.IndexOf(args, "--http");
-            if (httpIndex >= 0)
-            {
-                if (httpIndex + 1 >= args.Length || !int.TryParse(args[httpIndex + 1], out var port)
-                    || port < 1 || port > 65535)
-                {
-                    Console.Error.WriteLine("[RvtMcp] Invalid --http argument. Expected: --http <port> (1-65535)");
-                    Environment.Exit(1);
-                    return;
-                }
-                await RunHttpSse(config, port);
-            }
-            else
-            {
-                await RunStdio(config);
-            }
+            await RunStdio(config);
         }
 
         /// <summary>JIT warm-up: exercise selector parse, descriptor scan/probe,
@@ -150,42 +128,6 @@ namespace RvtMcp.Server
             await app.RunAsync();
         }
 
-        private static async Task RunHttpSse(RvtMcpConfig config, int port)
-        {
-            var enabled = ToolsetFilter.Resolve(config);
-            var builder = WebApplication.CreateBuilder();
-            var mcp = builder.Services
-                .AddMcpServer(ConfigureMcpServerOptions)
-                .WithHttpTransport();
-            mcp = RuntimeToolFilter.Register(mcp, config, ToolGateway.Session);
-            mcp = RegisterToolsets(mcp, enabled, config);
-            mcp.WithResources<RevitResources>();
-            mcp.WithPrompts<RevitPrompts>();
-
-            builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
-
-            var app = builder.Build();
-
-            app.Use(async (context, next) =>
-            {
-                var host = context.Request.Host.Host;
-                if (host != "127.0.0.1" && host != "localhost")
-                {
-                    context.Response.StatusCode = 403;
-                    context.Response.ContentType = "text/plain";
-                    await context.Response.WriteAsync("Forbidden: non-localhost host");
-                    return;
-                }
-                await next();
-            });
-
-            app.MapMcp();
-
-            Console.Error.WriteLine($"[RvtMcp] SSE server listening on http://127.0.0.1:{port}");
-            Console.Error.WriteLine($"[RvtMcp] Toolsets enabled: {string.Join(",", enabled.OrderBy(n => n))}");
-            await app.RunAsync();
-        }
-
         private static void PrintHelp()
         {
             var usage = string.Join("\n", new[]
@@ -198,9 +140,6 @@ namespace RvtMcp.Server
                 "         Commands other add-ins registered in a running Revit (e.g. Sonny.Revit). JSON on stdout, one error line",
                 "         on stderr; exit 0 ok, 1 the command or rvt-mcp refused, 2 bad arguments or no Revit reachable.",
                 "         With several Revit sessions running, --target (year | pid:<n> | id:revit-<year>-<pid>) is required.",
-                "",
-                "Transport:",
-                "  --http <port>           Run HTTP SSE on 127.0.0.1:<port> (1-65535). Default = stdio.",
                 "",
                 "Routing:",
                 "  --target <selector>     Pin the initial target: auto | a 4-digit calendar",
@@ -275,8 +214,7 @@ namespace RvtMcp.Server
                 WebsiteUrl = "https://github.com/bimwright/rvt-mcp"
             };
             // A newer release known from the add-in's cached daily check (no network here).
-            opts.ServerInstructions = RvtMcp.Plugin.Update.UpdateNoticeText.ComposeInstructions(
-                ServerInstructionsText, RvtMcp.Plugin.Update.UpdateNoticeText.ForAgent(UpdateStatus.Current()));
+            opts.ServerInstructions = ServerInstructionsText;
         }
 
         // Anthropic Tool Search truncates this at 2 KB; the constant below is kept
@@ -424,7 +362,7 @@ Tools (prefix revit_):
             // catalog handshake) — run it off the caller's context.
             var (conn, effectiveGeneration) = await Task.Run(() => EnsureConnectedFor(pinned, callCtx));
             (conn, effectiveGeneration) = await WriteRequest(
-                conn, effectiveGeneration, id, command, parameters, timeoutSeconds, config, null, tcs, callCtx);
+                conn, effectiveGeneration, id, command, parameters, timeoutSeconds, config, tcs, callCtx);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int budgetSeconds = timeoutSeconds ?? 60;
@@ -781,8 +719,7 @@ Tools (prefix revit_):
                     targets,
                     note = targets.Length == 0
                         ? "No revit-*.json descriptors found. Start Revit and ensure the rvt-mcp plugin is loaded (Add-Ins ribbon)."
-                        : "Pin an instance with revit_switch_target — 'version' accepts a 4-digit year, 'pid:<n>' or 'id:<target_id>'. When several instances share a year, always pin with pid:<n>.",
-                    update_available = UpdateStatus.ForStatusResult()
+                        : "Pin an instance with revit_switch_target — 'version' accepts a 4-digit year, 'pid:<n>' or 'id:<target_id>'. When several instances share a year, always pin with pid:<n>."
                 }, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }
@@ -806,9 +743,6 @@ Tools (prefix revit_):
                     : null;
                 block["currently_connected_pid"] = ToolGateway.ConnectedPid;
                 block["discovery_dir"] = AuthToken.DiscoveryDir();
-                block["update_available"] = UpdateStatus.ForStatusResult() is { } upd
-                    ? JToken.FromObject(upd)
-                    : JValue.CreateNull();
                 return JsonConvert.SerializeObject(block, Formatting.Indented);
             }
             catch (Exception ex) { return $"Error: {ex.Message}"; }

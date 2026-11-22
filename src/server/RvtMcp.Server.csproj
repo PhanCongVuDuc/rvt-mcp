@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -9,9 +9,7 @@
     <AssemblyName>RvtMcp.Server</AssemblyName>
     <LangVersion>latest</LangVersion>
     <NuGetAuditMode>all</NuGetAuditMode>
-    <!-- Sdk.Web defaults to Server GC: one heap + GC thread per logical core (31 on a 32-core box),
-         ~60 MB extra private memory at idle and hundreds of MB retained after a burst. Each MCP client
-         spawns its own stdio server, so Workstation GC fits. -->
+    <!-- Each MCP client spawns its own stdio server; Server GC would add a heap and GC thread per core. -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
 
@@ -40,13 +38,9 @@
   <!-- Shared config (A9) — pulled in as source so server binary has zero extra deps -->
   <ItemGroup>
     <Compile Include="..\shared\Config\RvtMcpConfig.cs" Link="Shared\RvtMcpConfig.cs" />
-    <Compile Include="..\shared\Logging\PersistSendCodeTtl.cs" Link="Shared\PersistSendCodeTtl.cs" />
     <Compile Include="..\shared\Security\BakeRedactor.cs" Link="Shared\BakeRedactor.cs" />
     <Compile Include="..\shared\Security\SecretMasker.cs" Link="Shared\SecretMasker.cs" />
-    <Compile Include="..\shared\Infrastructure\LegacyDataMigration.cs" Link="Shared\LegacyDataMigration.cs" />
     <Compile Include="..\shared\Infrastructure\ToolReadPolicy.cs" Link="Shared\ToolReadPolicy.cs" />
-    <Compile Include="..\shared\Survey\SurveyContract.cs" Link="Shared\SurveyContract.cs" />
-    <Compile Include="..\shared\Survey\SurveySnapshotCache.cs" Link="Shared\SurveySnapshotCache.cs" />
     <Compile Include="..\shared\Infrastructure\ResponseSizeGuard.cs" Link="Shared\ResponseSizeGuard.cs" />
     <Compile Include="..\shared\Infrastructure\ResponseSizePolicyCatalog.cs" Link="Shared\ResponseSizePolicyCatalog.cs" />
     <Compile Include="..\shared\Infrastructure\MutationResponseCompactor.cs" Link="Shared\MutationResponseCompactor.cs" />
@@ -56,14 +50,10 @@
     <Compile Include="..\shared\Infrastructure\ResponseEnvelopeGuard.cs" Link="Shared\ResponseEnvelopeGuard.cs" />
     <Compile Include="..\shared\Infrastructure\DocumentChangeAccumulator.cs" Link="Shared\DocumentChangeAccumulator.cs" />
     <Compile Include="..\shared\Infrastructure\ChangeSummary.cs" Link="Shared\ChangeSummary.cs" />
-    <Compile Include="..\shared\Infrastructure\ChangeHistoryTransfer.cs" Link="Shared\ChangeHistoryTransfer.cs" />
-    <Compile Include="..\shared\Infrastructure\HistoryDiagnostics.cs" Link="Shared\HistoryDiagnostics.cs" />
-    <Compile Include="..\shared\Infrastructure\HistoryFileIdentity.cs" Link="Shared\HistoryFileIdentity.cs" />
     <Compile Include="..\shared\Views\Toast\ToolActivityClassifier.cs" Link="Shared\ToolActivityClassifier.cs" />
     <Compile Include="..\shared\Security\McpResponsePrivacy.cs" Link="Shared\McpResponsePrivacy.cs" />
     <Compile Include="..\shared\Security\ErrorSanitizer.cs" Link="Shared\ErrorSanitizer.cs" />
     <Compile Include="..\shared\ToolCatalog\ToolCatalogModels.cs" Link="Shared\ToolCatalogModels.cs" />
-    <Compile Include="..\shared\Update\UpdateCheck.cs" Link="Shared\UpdateCheck.cs" />
   </ItemGroup>
 
   <!-- Prompt bodies (D1): embedded markdown, stable LogicalName like the localization catalogs -->
@@ -81,10 +71,6 @@
 
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
-    <!-- Pin patched native SQLite without changing managed assembly bindings. -->
-    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>

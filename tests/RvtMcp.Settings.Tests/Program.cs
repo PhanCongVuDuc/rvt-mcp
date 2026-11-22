@@ -176,7 +176,7 @@ internal static class Program
             window.SelectTab(SettingsTab.Tools);
             Expect(tools.RefreshCount == before + 1, "opening Tools refreshes the catalog");
             window.SelectTab(SettingsTab.General);
-            Field<ComboBox>(window, "_journalHours").SelectedItem = 8;
+            Field<ComboBox>(window, "_toastIdle").SelectedItem = 30;
             Expect(tools.RefreshCount == before + 1, "combo selection inside a tab is not a tab switch");
             Click(Field<Button>(window, "_discard"));
             var search = Field<TextBox>(window, "_toolSearch");

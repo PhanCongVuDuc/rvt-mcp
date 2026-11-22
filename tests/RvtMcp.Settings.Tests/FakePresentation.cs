@@ -9,13 +9,9 @@ internal sealed class FakeSettings : ISettingsPresentation
 {
     private int _idle = 20;
     private bool _cache;
-    private bool _persist;
-    private int _hours = 4;
 
     public int SavedIdle = 20;
     public bool SavedCache;
-    public bool SavedPersist;
-    public int SavedHours = 4;
     /// <summary>Config key whose Apply write should fail.</summary>
     public string FailApplyKey;
     public int CopyCount;
@@ -35,9 +31,7 @@ internal sealed class FakeSettings : ISettingsPresentation
     public bool ToastEnabled { get; private set; } = true;
     public int ToastIdleSeconds { get => _idle; set { _idle = value; Changed(); } }
     public bool CacheSendCodeBodies { get => _cache; set { _cache = value; Changed(); } }
-    public bool PersistSendCodeBodies { get => _persist; set { _persist = value; Changed(); } }
-    public int PersistSendCodeBodiesHours { get => _hours; set { _hours = value; Changed(); } }
-    public bool IsDirty => _idle != SavedIdle || _cache != SavedCache || _persist != SavedPersist || _hours != SavedHours;
+    public bool IsDirty => _idle != SavedIdle || _cache != SavedCache;
     public string ImmediateWarning { get; private set; }
     public string ImmediateWarningKey { get; private set; }
     public string RevitYear { get; set; } = "2024";
@@ -97,8 +91,6 @@ internal sealed class FakeSettings : ISettingsPresentation
         }
         if (_idle != SavedIdle) Commit("toastIdleSeconds", () => SavedIdle = _idle);
         if (_cache != SavedCache) Commit("cacheSendCodeBodies", () => SavedCache = _cache);
-        if (_persist != SavedPersist) Commit("persistSendCodeBodies", () => SavedPersist = _persist);
-        if (_hours != SavedHours) Commit("persistSendCodeBodiesHours", () => SavedHours = _hours);
         Changed();
         return report;
     }
@@ -107,8 +99,6 @@ internal sealed class FakeSettings : ISettingsPresentation
     {
         _idle = SavedIdle;
         _cache = SavedCache;
-        _persist = SavedPersist;
-        _hours = SavedHours;
         Changed();
     }
 

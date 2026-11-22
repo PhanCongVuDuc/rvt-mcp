@@ -37,7 +37,6 @@ namespace RvtMcp.Plugin
         private HistoryWindow _historyWindow;
         private SettingsWindow _settingsWindow;
         private UIControlledApplication _ribbonApplication;
-        private Update.UpdateNoticeCoordinator _updateNotice;
 
         public Result OnStartup(UIControlledApplication application)
         {
@@ -47,23 +46,17 @@ namespace RvtMcp.Plugin
             DebugLog("OnStartup: BEGIN");
 
             McpLogger.Initialize();
-            if (!LegacyDataMigration.TryMigrateOnce(DebugLog)) return Result.Failed;
             SessionLog = new McpSessionLog();
             Config = RvtMcpConfig.Load(args: null);
             Localization.LocalizationHost.InitializePlugin(
                 application.ControlledApplication.Language.ToString(), Config.UiLanguage, DebugLog);
             ToastEnabled = Config.EnableToastOrDefault;
-            _updateNotice = new Update.UpdateNoticeCoordinator(DebugLog);
-            _updateNotice.Start();
             DebugLog("OnStartup: McpLogger + SessionLog OK");
 
             _dispatcher = new CommandDispatcher();
             _handler = new McpEventHandler(_dispatcher, SessionLog);
             _externalEvent = ExternalEvent.Create(_handler);
             application.ControlledApplication.DocumentChanged += McpChangeTracker.OnDocumentChanged;
-            application.ViewActivated += Survey.SurveyHistoryBridge.Invalidate;
-            application.ControlledApplication.DocumentClosing += Survey.SurveyHistoryBridge.Invalidate;
-            application.ControlledApplication.DocumentSavedAs += Survey.SurveyHistoryBridge.Invalidate;
             DebugLog("OnStartup: Dispatcher + EventHandler + ExternalEvent OK");
 
             CreateAndStartTransport();
@@ -83,14 +76,10 @@ namespace RvtMcp.Plugin
         public Result OnShutdown(UIControlledApplication application)
         {
             application.ControlledApplication.DocumentChanged -= McpChangeTracker.OnDocumentChanged;
-            application.ViewActivated -= Survey.SurveyHistoryBridge.Invalidate;
-            application.ControlledApplication.DocumentClosing -= Survey.SurveyHistoryBridge.Invalidate;
-            application.ControlledApplication.DocumentSavedAs -= Survey.SurveyHistoryBridge.Invalidate;
             application.Idling -= OnIdling;
             Localization.LocalizationHost.ShutdownPlugin();
             _historyWindow?.Close();
             _settingsWindow?.CloseForShutdown();
-            _updateNotice?.Shutdown();
 
             StopTransport();
             _handler?.CancelAll();
@@ -128,7 +117,6 @@ namespace RvtMcp.Plugin
                     CommandName = request.Value<string>("command"),
                     ParamsJson = request["params"]?.ToString() ?? "{}",
                     RuntimeOptions = request["runtime"]?.ToObject<RvtMcpConfig>(),
-                    History = request["history"]?.ToObject<ChangeHistoryRequest>(),
                     Tcs = tcs
                 };
 
@@ -195,7 +183,6 @@ namespace RvtMcp.Plugin
 
         private void OnIdling(object sender, IdlingEventArgs e)
         {
-            _updateNotice?.OnIdling(_ribbonApplication?.MainWindowHandle ?? IntPtr.Zero);
             _idlingUpdater?.Update(IsTransportRunning, Transport, SessionLog, ToastEnabled);
         }
 

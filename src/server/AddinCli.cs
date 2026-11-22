@@ -71,7 +71,7 @@ namespace RvtMcp.Server
             }
 
             RevitTargetBinding.Initialize(selector);
-            ServerState.Config = new RvtMcpConfig { ReadOnly = request.ReadOnly, EnableChangeHistory = false };
+            ServerState.Config = new RvtMcpConfig { ReadOnly = request.ReadOnly };
             var context = TargetCallContext.Begin();
             try
             {

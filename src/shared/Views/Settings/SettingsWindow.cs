@@ -50,8 +50,6 @@ namespace RvtMcp.Plugin.Views.Settings
         private ComboBox _language;
         private TextBlock _languageCaption;
         private CheckBox _cacheSendCodeBodies;
-        private CheckBox _persistSendCodeBodies;
-        private ComboBox _journalHours;
         private CheckBox _toastEnabled;
         private ComboBox _toastIdle;
         private DataGrid _toolsGrid;
@@ -237,32 +235,10 @@ namespace RvtMcp.Plugin.Views.Settings
             _cacheSendCodeBodies = Switch(cacheLabel);
             _cacheSendCodeBodies.Checked += (_, __) => { if (!_syncingControls) _viewModel.CacheSendCodeBodies = true; };
             _cacheSendCodeBodies.Unchecked += (_, __) => { if (!_syncingControls) _viewModel.CacheSendCodeBodies = false; };
-            var journalLabel = RowLabel("settings.general.keepJournal", "Keep send_code journal");
-            _persistSendCodeBodies = Switch(journalLabel);
-            _persistSendCodeBodies.Checked += (_, __) => { if (!_syncingControls) _viewModel.PersistSendCodeBodies = true; };
-            _persistSendCodeBodies.Unchecked += (_, __) => { if (!_syncingControls) _viewModel.PersistSendCodeBodies = false; };
-            // The duration sits beside the journal switch it belongs to; its label names/tooltips it.
-            _journalHours = new ComboBox { Width = 84, ItemsSource = Enumerable.Range(1, 48).ToArray(), ItemStringFormat = "{0} h", Margin = new Thickness(0, 0, 12, 0) };
-            _localizedText.Add(() =>
-            {
-                var hoursText = SettingsText.Text("settings.general.journalDuration", "Journal duration (hours)");
-                _journalHours.ToolTip = hoursText;
-                AutomationProperties.SetName(_journalHours, hoursText);
-            });
-            _journalHours.SelectionChanged += (_, __) =>
-            {
-                if (!_syncingControls && _journalHours.SelectedItem is int value) _viewModel.PersistSendCodeBodiesHours = value;
-            };
-            var journalControls = new StackPanel { Orientation = Orientation.Horizontal };
-            journalControls.Children.Add(_journalHours);
-            journalControls.Children.Add(_persistSendCodeBodies);
             page.Children.Add(Card(
                 Row(cacheLabel,
-                    RowCaption("settings.general.cacheBodies.help", "Keeps submitted C# in History for reuse and bake suggestions."),
-                    _cacheSendCodeBodies, "cacheSendCodeBodies"),
-                Row(journalLabel,
-                    RowCaption("settings.general.keepJournal.help", "Writes submitted C# to a local journal until the duration ends."),
-                    journalControls, "persistSendCodeBodies", "persistSendCodeBodiesHours")));
+                    RowCaption("settings.general.cacheBodies.help", "Keeps submitted C# in History so a send_code call can be re-run."),
+                    _cacheSendCodeBodies, "cacheSendCodeBodies")));
             return page;
         }
 
@@ -694,8 +670,6 @@ namespace RvtMcp.Plugin.Views.Settings
                 _toastIdle.SelectedItem = _viewModel.ToastIdleSeconds;
                 _toastIdle.IsEnabled = _viewModel.ToastEnabled;
                 _cacheSendCodeBodies.IsChecked = _viewModel.CacheSendCodeBodies;
-                _persistSendCodeBodies.IsChecked = _viewModel.PersistSendCodeBodies;
-                _journalHours.SelectedItem = _viewModel.PersistSendCodeBodiesHours;
             }
             finally
             {

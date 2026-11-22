@@ -9,7 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Bimwright.Targeting;
-using RvtMcp.Plugin; // RvtMcpConfig, ChangeHistoryRequest
+using RvtMcp.Plugin; // RvtMcpConfig
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -85,7 +85,7 @@ namespace RvtMcp.Server
                 var wire = JsonConvert.SerializeObject(new
                 {
                     id = "warmup", command = "warmup", @params = new { },
-                    token = "warmup", timeout_seconds = 1, runtime = (object)null, history = (object)null
+                    token = "warmup", timeout_seconds = 1, runtime = (object)null
                 }, RequestJsonSettings);
                 _ = wire.Length;
                 _ = JObject.Parse("{\"id\":\"warmup\",\"success\":true,\"data\":{}}");
@@ -481,7 +481,7 @@ namespace RvtMcp.Server
         /// </summary>
         private static async Task<(Conn Conn, long EffectiveGeneration)> WriteRequest(
             Conn conn, long effectiveGeneration, string id, string command, object parameters,
-            int? timeoutSeconds, RvtMcpConfig config, ChangeHistoryRequest history,
+            int? timeoutSeconds, RvtMcpConfig config,
             TaskCompletionSource<string> tcs, TargetCallContext callCtx)
         {
             var binding = RevitTargetBinding.Binding;
@@ -505,7 +505,7 @@ namespace RvtMcp.Server
                         var request = JsonConvert.SerializeObject(new
                         {
                             id, command, @params = parameters ?? new { }, token = conn.Token,
-                            timeout_seconds = timeoutSeconds, runtime = config.ToRuntimeOptions(), history
+                            timeout_seconds = timeoutSeconds, runtime = config.ToRuntimeOptions()
                         }, RequestJsonSettings);
                         try
                         {

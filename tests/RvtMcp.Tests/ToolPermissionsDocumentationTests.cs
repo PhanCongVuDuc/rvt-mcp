@@ -11,9 +11,6 @@ namespace RvtMcp.Tests
     {
         [Theory]
         [InlineData("README.md")]
-        [InlineData("README.vi.md")]
-        [InlineData("README.ja.md")]
-        [InlineData("README.zh-CN.md")]
         public void Permissions_allow_list_matches_read_only_annotations(string file)
         {
             var text = File.ReadAllText(Path.Combine(RepoRoot(), file));

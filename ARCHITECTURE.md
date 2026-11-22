@@ -62,12 +62,11 @@ Six plugin shells share one source tree. Each csproj glob-includes `src/shared/*
 ```
 src/
 ├── server/                # RvtMcp.Server (.NET 8)
-├── shared/                # Handlers, CommandDispatcher, Transport, Logging, Security, ToolBaker
+├── shared/                # Handlers, CommandDispatcher, Transport, Logging, Security
 │   ├── Handlers/          # per-command tool handlers
-│   ├── Infrastructure/    # CommandDispatcher, McpEventHandler, SchemaValidator, BatchExecutor
+│   ├── Infrastructure/    # CommandDispatcher, McpEventHandler, SchemaValidator
 │   ├── Transport/         # ITransportServer, TcpTransportServer, PipeTransportServer
 │   ├── Security/          # AuthToken, ErrorSanitizer, SecretMasker
-│   ├── ToolBaker/         # Roslyn self-evolution engine
 │   ├── Config/            # RvtMcpConfig — 3-layer precedence
 │   └── Views/             # HistoryWindow
 ├── plugin-r22/            # net48, TCP
@@ -100,31 +99,13 @@ Timeout: 60s by default. Long-run tools accept `timeout_seconds` from 1–900; I
 
 Wire JSON over 1 MiB is rejected (100 KB logs an S4 warning). Narrow filters / `max_results` instead of retrying the same dump.
 
-## Progressive disclosure (A3)
+## Toolsets
 
-Tools are grouped into 10 toolset classes (`QueryTools`, `CreateTools`, `ViewTools`, …). `Program.RegisterToolsets` only calls `.WithTools<T>()` for enabled toolsets, so disabled tools never appear in `tools/list` — the model can't accidentally call what it can't see. `ToolsetFilter.Resolve` handles defaults (`query+create+view+meta`), the `"all"` shortcut, unknown-token tolerance, and `--read-only` post-processing (strips `create`/`modify`/`delete` after expansion).
+The 14 tools sit in five toolset classes (`QueryTools`, `ViewTools`, `ExportTools`, `MetaTools`, `SheetsTools`, plus the add-in tools). `Program.RegisterToolsets` registers only enabled toolsets and `--tools` narrows to a per-tool allowlist, so hidden tools never appear in `tools/list`. `--read-only` keeps only tools annotated read-only (plus `switch_target` and `call_addin_command`, which guard themselves).
 
-## Batch execution (A6)
+## Notifications
 
-`batch_execute` is the one MCP tool that forwards a list. Cap is **20** sub-commands (server and plugin fail-fast). Plugin-side, `BatchExecuteHandler` opens a `TransactionGroup` and dispatches each sub-command through the normal handler path (so each handler gets its own inner `Transaction` — Revit forbids nested transactions, but a group around them is allowed). On success it calls `Assimilate()` to merge everything into one undo step. On failure it calls `RollBack()` unless `continueOnError=true`. Iteration logic is factored into `BatchExecutor.Run` so it's unit-testable without a live Revit document. The UI handler processes **one live command per ExternalEvent** and re-raises if the queue still has work.
-
-## ToolBaker pipeline
-
-```
-Legacy local baked-tool registry
-             │
-             ▼
-Roslyn CSharpCompilation
-             │  (refs: AppDomain.GetAssemblies() — avoids Assembly.Load crash in Revit)
-             ▼
-In-memory Assembly
-             ▼
-Loaded baked IRevitCommand
-             │
-run_baked_tool(name)
-```
-
-Baked tools persist across Revit restarts in the current local user registry and are executed only through `list_baked_tools` + `run_baked_tool`; they are not exposed as native MCP tools. SQLite-backed metadata, stronger isolation, and signed-bake verification are planned adaptive-bake hardening work. `send_code_to_revit` is the unsandboxed cousin — it executes arbitrary C# against the running Revit session and is runtime-gated by plugin-visible adaptive-bake opt-in from the Revit process environment or `%LOCALAPPDATA%\Bimwright\rvt-mcp\rvtmcp.config.json`.
+Tool-call activity is shown as a Windows notification raised by the server (`ServerToast`, `Windows.UI.Notifications`). One notification per MCP session is updated in place; the plugin draws nothing on Revit's UI thread.
 
 ## Config precedence (A9)
 
@@ -150,6 +131,6 @@ Hand-rolled parser, no `System.CommandLine` dep. Each field is nullable so "not 
 
 ## Why this shape
 
-- **Full C#, one stack.** No TypeScript bridge, no Python helper, no IPC format hop. One language across server, plugin, handlers, ToolBaker, tests.
+- **Full C#, one stack.** No TypeScript bridge, no Python helper, no IPC format hop. One language across server, plugin and handlers, tests.
 - **Process split, not thread split.** The server lives outside Revit so it can start before Revit and outlive a plugin crash. Users update the server via `dotnet tool update -g` without touching their add-in.
 - **Source glob, not shared DLL.** Each plugin shell compiles `src/shared/**` directly so version-specific `#if` branches produce distinct binaries — no runtime version sniffing, no reflection fallback.

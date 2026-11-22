@@ -13,22 +13,6 @@ namespace RvtMcp.Tests
     {
 
         [Fact]
-        public void Every_approved_group2_tool_has_a_command_specific_recovery_hint()
-        {
-            var root = GetRepoRoot();
-            // Keep the approved command baseline independent of maintainer research notes.
-            var group2Tools = File.ReadAllLines(Path.Combine(
-                root, "tests", "RvtMcp.Tests", "Golden", "response-size-scoped-commands.txt"));
-            var catalog = File.ReadAllText(Path.Combine(root, "src", "shared", "Infrastructure", "ResponseSizePolicyCatalog.cs"));
-
-            Assert.Equal(94, group2Tools.Length);
-            Assert.Equal(group2Tools.Length, group2Tools.Distinct(StringComparer.Ordinal).Count());
-            Assert.All(group2Tools, command => Assert.False(string.IsNullOrWhiteSpace(command)));
-            foreach (var command in group2Tools)
-                Assert.Contains("[\"" + command + "\"]", catalog);
-        }
-
-        [Fact]
         public void Event_boundary_processes_file_and_auto_spill_before_response_guarding()
         {
             var eventHandler = File.ReadAllText(Path.Combine(

@@ -22,12 +22,6 @@ namespace RvtMcp.Plugin
                 if (Encoding.UTF8.GetByteCount(response["changes"].ToString(Formatting.None)) > budget / 4)
                     response["changes"] = ChangeSummary.Omitted();
             }
-            var operationError = ResponseSizePolicyCatalog.GetOperationError(command, response["data"] as JObject);
-            if (operationError != null)
-            {
-                response["success"] = false;
-                response["error"] = McpResponsePrivacy.RedactErrorForResponse(operationError);
-            }
             var payload = measuredPayload ?? response.ToString(Formatting.None);
             var originalBytes = Encoding.UTF8.GetByteCount(payload);
             var spill = new ResponseSpillProcessor(writer ?? ResponseSpillWriter.ForConfig(config)).Process(

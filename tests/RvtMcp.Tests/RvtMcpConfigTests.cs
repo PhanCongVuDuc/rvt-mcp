@@ -80,35 +80,18 @@ namespace RvtMcp.Tests
                 {
                     "--read-only",
                     "--allow-lan-bind",
-                    "--enable-toolbaker",
-                    "--enable-adaptive-bake",
                     "--cache-send-code-bodies",
                 });
             Assert.True(config.ReadOnly);
             Assert.True(config.AllowLanBind);
-            Assert.True(config.EnableToolbaker);
-            Assert.True(config.EnableAdaptiveBake);
             Assert.True(config.CacheSendCodeBodies);
         }
 
         [Fact]
-        public void ApplyCliArgs_DisableToolbakerSetsFalse()
+        public void ApplyCliArgs_NoCacheSendCodeBodiesSetsFalse()
         {
-            var config = new RvtMcpConfig();
-            RvtMcpConfig.ApplyCliArgs(config, new[] { "--disable-toolbaker" });
-            Assert.False(config.EnableToolbaker);
-        }
-
-        [Fact]
-        public void ApplyCliArgs_AdaptiveBakeDisableFlagsSetFalse()
-        {
-            var config = new RvtMcpConfig
-            {
-                EnableAdaptiveBake = true,
-                CacheSendCodeBodies = true,
-            };
-            RvtMcpConfig.ApplyCliArgs(config, new[] { "--disable-adaptive-bake", "--no-cache-send-code-bodies" });
-            Assert.False(config.EnableAdaptiveBake);
+            var config = new RvtMcpConfig { CacheSendCodeBodies = true };
+            RvtMcpConfig.ApplyCliArgs(config, new[] { "--no-cache-send-code-bodies" });
             Assert.False(config.CacheSendCodeBodies);
         }
 
@@ -133,8 +116,6 @@ namespace RvtMcp.Tests
                 [RvtMcpConfig.EnvToolsets] = "query,create",
                 [RvtMcpConfig.EnvReadOnly] = "true",
                 [RvtMcpConfig.EnvAllowLanBind] = "1",
-                [RvtMcpConfig.EnvEnableToolbaker] = "false",
-                [RvtMcpConfig.EnvEnableAdaptiveBake] = "true",
                 [RvtMcpConfig.EnvCacheSendCodeBodies] = "1",
                 [RvtMcpConfig.EnvEnableToast] = "true",
             }));
@@ -142,8 +123,6 @@ namespace RvtMcp.Tests
             Assert.Equal(new[] { "query", "create" }, config.Toolsets);
             Assert.True(config.ReadOnly);
             Assert.True(config.AllowLanBind);
-            Assert.False(config.EnableToolbaker);
-            Assert.True(config.EnableAdaptiveBake);
             Assert.True(config.CacheSendCodeBodies);
             Assert.True(config.EnableToast);
         }
@@ -198,8 +177,6 @@ namespace RvtMcp.Tests
                 Assert.Equal(new[] { "query", "view" }, config.Toolsets);
                 Assert.True(config.ReadOnly);
                 Assert.Null(config.AllowLanBind); // absent → null
-                Assert.False(config.EnableToolbaker);
-                Assert.True(config.EnableAdaptiveBake);
                 Assert.True(config.CacheSendCodeBodies);
             }
             finally { File.Delete(path); }
@@ -255,8 +232,6 @@ namespace RvtMcp.Tests
             Assert.Null(config.Toolsets);
             Assert.False(config.ReadOnlyOrDefault);
             Assert.False(config.AllowLanBindOrDefault);
-            Assert.True(config.EnableToolbakerOrDefault); // default ON per aspect #5
-            Assert.False(config.EnableAdaptiveBakeOrDefault);
             Assert.False(config.CacheSendCodeBodiesOrDefault);
             Assert.True(config.EnableToastOrDefault);
         }
@@ -269,8 +244,6 @@ namespace RvtMcp.Tests
             var config = new RvtMcpConfig();
             Assert.False(config.ReadOnlyOrDefault);
             Assert.False(config.AllowLanBindOrDefault);
-            Assert.True(config.EnableToolbakerOrDefault);
-            Assert.False(config.EnableAdaptiveBakeOrDefault);
             Assert.False(config.CacheSendCodeBodiesOrDefault);
             Assert.True(config.EnableToastOrDefault);
         }
@@ -282,15 +255,11 @@ namespace RvtMcp.Tests
             {
                 ReadOnly = true,
                 AllowLanBind = true,
-                EnableToolbaker = false,
-                EnableAdaptiveBake = true,
                 CacheSendCodeBodies = true,
                 EnableToast = true,
             };
             Assert.True(config.ReadOnlyOrDefault);
             Assert.True(config.AllowLanBindOrDefault);
-            Assert.False(config.EnableToolbakerOrDefault);
-            Assert.True(config.EnableAdaptiveBakeOrDefault);
             Assert.True(config.CacheSendCodeBodiesOrDefault);
             Assert.True(config.EnableToastOrDefault);
         }

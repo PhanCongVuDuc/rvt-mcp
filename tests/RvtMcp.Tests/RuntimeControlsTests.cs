@@ -23,7 +23,6 @@ namespace RvtMcp.Tests
         public void Dispose()
         {
             McpLogger.LocalAppDataOverride = null;
-            SendCodeJournal.LocalAppDataOverride = null;
             McpLogger.Initialize();
             if (Directory.Exists(_root)) Directory.Delete(_root, true);
         }
@@ -59,13 +58,12 @@ namespace RvtMcp.Tests
         [Fact]
         public void Runtime_options_override_plugin_settings_without_persisting_or_changing_body_retention()
         {
-            var plugin = new RvtMcpConfig { EnableCallLog = true, PersistSendCodeBodies = true };
+            var plugin = new RvtMcpConfig { EnableCallLog = true};
             var server = new RvtMcpConfig { EnableCallLog = false, EnableSendCode = false, ReadOnly = true };
             var wire = JObject.FromObject(server.ToRuntimeOptions()).ToObject<RvtMcpConfig>();
             var resolved = plugin.WithRuntimeOptions(wire);
             Assert.False(resolved.EnableCallLogOrDefault);
             Assert.False(resolved.EnableSendCodeOrDefault);
-            Assert.True(resolved.PersistSendCodeBodies);
             Assert.True(plugin.EnableCallLogOrDefault);
             Assert.Contains("READ_ONLY", ToolReadPolicy.Rejection("create_level", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
             Assert.Null(ToolReadPolicy.Rejection("list_sheets", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
@@ -76,17 +74,11 @@ namespace RvtMcp.Tests
         public void Call_log_off_creates_no_files_and_does_not_append_existing_logs()
         {
             McpLogger.LocalAppDataOverride = _root;
-            SendCodeJournal.LocalAppDataOverride = _root;
             McpLogger.Initialize();
             McpLogger.Log("get_current_view_info", "{}", true, 1, resultJson: "{}");
             var journal = new JournalLogger(journalDir: Path.Combine(_root, "journal"));
             journal.Log(JournalEntry.Create("query", "{}", true, 1));
             Assert.Empty(journal.ListDates());
-            Assert.False(Directory.Exists(_root));
-            Assert.False(SendCodeJournal.TryAppend(new RvtMcpConfig
-            {
-                PersistSendCodeBodies = true, PersistSendCodeBodiesUntil = DateTimeOffset.UtcNow.AddHours(1).ToString("o")
-            }, "test", "return 1;", true, 1, null, "{}"));
             Assert.False(Directory.Exists(_root));
             McpLogger.Log("get_current_view_info", "{}", true, 1, enabled: true);
             var log = McpLogger.CurrentLogPath;
@@ -205,15 +197,6 @@ namespace RvtMcp.Tests
                 Assert.Contains("read_only_mode", ServerState.BlockIfReadOnly("set_view_crop"));
             }
             finally { ServerState.Config = before; }
-        }
-
-        [Fact]
-        public void Inline_takeoff_does_not_claim_file_or_model_mutation_after_compaction()
-        {
-            var result = RuntimeToolFilter.Apply(new CallToolRequestParams { Name = "revit_get_material_takeoff" },
-                Text(new JObject { ["rows"] = new string('x', 30000) }.ToString()), SmallLimits());
-            Assert.True(result.IsError);
-            Assert.Contains("RESPONSE_TOO_LARGE", ((TextContentBlock)result.Content[0]).Text);
         }
 
         [Fact]

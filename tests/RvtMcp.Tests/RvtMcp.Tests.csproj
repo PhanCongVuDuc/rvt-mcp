@@ -37,8 +37,6 @@
     <Compile Include="..\..\src\shared\Transport\TcpTransportServer.cs" Link="Shared\TcpTransportServer.cs" />
     <Compile Include="..\..\src\shared\Logging\McpLogger.cs" Link="Shared\McpLogger.cs" />
     <Compile Include="..\..\src\shared\Logging\McpSessionLog.cs" Link="Shared\McpSessionLog.cs" />
-    <Compile Include="..\..\src\shared\Logging\SendCodeJournal.cs" Link="Shared\SendCodeJournal.cs" />
-    <Compile Include="..\..\src\shared\Logging\SendCodeJournalGate.cs" Link="Shared\SendCodeJournalGate.cs" />
     <Compile Include="..\..\src\shared\Logging\SessionLogHistoryLoader.cs" Link="Shared\SessionLogHistoryLoader.cs" />
     <Compile Include="..\..\src\shared\Logging\SummaryGenerator.cs" Link="Shared\SummaryGenerator.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\CaptureOutputResolver.cs" Link="Shared\CaptureOutputResolver.cs" />
@@ -50,9 +48,6 @@
     <Compile Include="..\..\src\shared\Infrastructure\RequestWait.cs" Link="Shared\RequestWait.cs" />
     <Compile Include="..\..\src\shared\Config\StatusPrivacySection.cs" Link="Shared\StatusPrivacySection.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\CommandOutcome.cs" Link="Shared\CommandOutcome.cs" />
-    <Compile Include="..\..\src\shared\Lint\ViewNamingAnalyzer.cs" Link="Shared\ViewNamingAnalyzer.cs" />
-    <Compile Include="..\..\src\shared\Lint\FirmProfile.cs" Link="Shared\FirmProfile.cs" />
-    <Compile Include="..\..\src\shared\Lint\FirmProfileLibrary.cs" Link="Shared\FirmProfileLibrary.cs" />
     <Compile Include="..\..\src\shared\Localization\LocaleResolver.cs" Link="Shared\Localization\LocaleResolver.cs" />
     <Compile Include="..\..\src\shared\Localization\StringTable.cs" Link="Shared\Localization\StringTable.cs" />
     <Compile Include="..\..\src\shared\Localization\L.cs" Link="Shared\Localization\L.cs" />

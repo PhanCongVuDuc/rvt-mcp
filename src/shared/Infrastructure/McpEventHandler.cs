@@ -16,7 +16,6 @@ namespace RvtMcp.Plugin
         public string CommandName { get; set; }
         public string ParamsJson { get; set; }
         public RvtMcpConfig RuntimeOptions { get; set; }
-        public ChangeHistoryRequest History { get; set; }
         public TaskCompletionSource<string> Tcs { get; set; }
     }
 
@@ -33,13 +32,6 @@ namespace RvtMcp.Plugin
         {
             _dispatcher = dispatcher;
             _sessionLog = sessionLog;
-
-            try
-            {
-                var config = RvtMcpConfig.Load(args: null);
-                SendCodeJournal.RunMaintenance(config);
-            }
-            catch { }
         }
 
         public void Enqueue(PendingRequest request)
@@ -58,8 +50,6 @@ namespace RvtMcp.Plugin
                 var sw = Stopwatch.StartNew();
                 var runtimeConfig = new RvtMcpConfig();
                 JObject changes = null;
-                JObject history = null;
-                JObject historyMarker = null;
                 try
                 {
                     runtimeConfig = RvtMcpConfig.LoadReadOnly().WithRuntimeOptions(request.RuntimeOptions);
@@ -124,8 +114,7 @@ namespace RvtMcp.Plugin
                     }
 
                     CommandResult result;
-                    var surveySnapshot = Survey.SurveyHistoryBridge.Before(app, request, runtimeConfig.EnableChangeHistoryOrDefault);
-                    using (var capture = McpChangeTracker.Begin(request.History?.IsValid == true && runtimeConfig.EnableChangeHistoryOrDefault))
+                    using (var capture = McpChangeTracker.Begin())
                     {
                         bool rolledBack = false;
                         try
@@ -137,16 +126,8 @@ namespace RvtMcp.Plugin
                         finally
                         {
                             changes = capture.Snapshot(rolledBack);
-                            try { history = capture.HistorySnapshot(app.ActiveUIDocument?.Document, rolledBack); }
-                            catch (Exception ex)
-                            {
-                                HistoryDiagnostics.Report("history_snapshot", ex, request.History?.Id, App.DebugLog);
-                                historyMarker = new JObject { ["status"] = "capture_failed" };
-                            }
-                            Survey.SurveyHistoryBridge.Complete(surveySnapshot, history);
                         }
                     }
-                    Survey.SurveyHistoryBridge.Remember(app, request, runtimeConfig.EnableChangeHistoryOrDefault, result);
                     sw.Stop();
                     // Spill may replace result.Data; the outcome is judged on the handler's own data.
                     var handlerData = result.Data;
@@ -162,9 +143,6 @@ namespace RvtMcp.Plugin
                     });
                     var envelope = JObject.Parse(preSpillResponse);
                     if (changes != null) envelope["changes"] = changes;
-                    // Reserve the small receipt marker in the response budget before writing the capture.
-                    if (history != null || historyMarker != null)
-                        envelope["history_transfer"] = historyMarker ?? ChangeHistoryTransfer.PublicationMarker(request.History.Id, history);
                     var preGuard = ResponseEnvelopeGuard.Apply(request.CommandName, request.ParamsJson,
                         envelope, runtimeConfig);
                     result.Data = preGuard["data"];
@@ -202,15 +180,10 @@ namespace RvtMcp.Plugin
                     // size guard so a rejected response is not recorded as a success.
                     var outcome = CommandOutcome.Normalize(
                         request.CommandName, result.Success, handlerData, resultError, rejectError);
-                    historyMarker = historyMarker ?? PublishHistory(request, history, outcome.Success, handlerData, app.Application.VersionNumber);
-                    if (historyMarker != null) preGuard["history_transfer"] = historyMarker;
-                    else preGuard.Remove("history_transfer");
                     var response = preGuard.ToString(Formatting.None);
 
                     McpLogger.Log(request.CommandName, request.ParamsJson, outcome.Success,
                                   sw.ElapsedMilliseconds, outcome.Error, codeSnippet, resultJson, runtimeConfig.EnableCallLogOrDefault);
-
-                    SendCodeJournalGate.OnSendCodeLogged(request.CommandName, request.ParamsJson, codeSnippet, outcome.Success, sw.ElapsedMilliseconds, outcome.Error, resultJson, runtimeConfig);
 
                     _sessionLog?.Add(new McpCallEntry
                     {
@@ -235,14 +208,6 @@ namespace RvtMcp.Plugin
                     McpLogger.Log(request.CommandName, request.ParamsJson, false,
                                   sw.ElapsedMilliseconds, exError, enabled: runtimeConfig.EnableCallLogOrDefault);
 
-                    string codeSnippetEx = null;
-                    if (request.CommandName == "send_code_to_revit")
-                    {
-                        try { codeSnippetEx = JObject.Parse(request.ParamsJson)?.Value<string>("code"); }
-                        catch { }
-                    }
-                    SendCodeJournalGate.OnSendCodeLogged(request.CommandName, request.ParamsJson, codeSnippetEx, false, sw.ElapsedMilliseconds, exError, null, runtimeConfig);
-
                     _sessionLog?.Add(new McpCallEntry
                     {
                         ToolName = request.CommandName,
@@ -260,8 +225,6 @@ namespace RvtMcp.Plugin
                         error = exError
                     });
                     if (changes != null) errorEnvelope["changes"] = changes;
-                    historyMarker = historyMarker ?? PublishHistory(request, history, false, null, app.Application.VersionNumber);
-                    if (historyMarker != null) errorEnvelope["history_transfer"] = historyMarker;
                     if (changes != null)
                     {
                         try { errorEnvelope = ResponseEnvelopeGuard.Apply(request.CommandName, request.ParamsJson, errorEnvelope, runtimeConfig); }
@@ -415,35 +378,6 @@ namespace RvtMcp.Plugin
         }
 
         public string GetName() => "RvtMcp.McpEventHandler";
-
-        private static JObject PublishHistory(PendingRequest request, JObject history, bool success, object data, string revitYear)
-        {
-            if (history == null) return null;
-            try
-            {
-                history["callId"] = request.History.Id;
-                history["session"] = request.History.Session;
-                history["tool"] = request.CommandName;
-                history["at"] = DateTime.UtcNow.ToString("o");
-                history["success"] = success;
-                history["revitYear"] = revitYear;
-                history["user"] = Environment.UserName;
-                history["machine"] = Environment.MachineName;
-                // The handler returns updated rows only after commit, including partial-success calls.
-                if (request.CommandName == "set_element_parameter_values" && data != null)
-                {
-                    var values = JObject.FromObject(data);
-                    history["parameterValues"] = new JObject { ["parameter"] = values["parameterName"], ["updated"] = values["updated"] };
-                }
-                return new ChangeHistoryTransfer().Publish(request.History.Id, history);
-            }
-            catch (Exception ex)
-            {
-                // History failure must never change or replay an already completed Revit operation.
-                HistoryDiagnostics.Report("history_publish", ex, request.History?.Id, App.DebugLog);
-                return new JObject { ["status"] = "capture_failed" };
-            }
-        }
 
         public void CancelAll()
         {

@@ -96,9 +96,7 @@ namespace RvtMcp.Tests
         private static RvtMcpConfig AllToolsetsConfig(bool enableAdaptiveBake)
         {
             return new RvtMcpConfig
-            {
-                EnableAdaptiveBake = enableAdaptiveBake,
-                Toolsets = new System.Collections.Generic.List<string> { "all" }
+            { Toolsets = new System.Collections.Generic.List<string> { "all" }
             };
         }
 

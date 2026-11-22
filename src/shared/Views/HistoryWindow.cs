@@ -43,7 +43,6 @@ namespace RvtMcp.Plugin.Views
         private readonly Button _rerunButton;
         private Button _loadHistoryButton;
         private McpCallEntry _selectedEntry;
-        private Dictionary<string, string> _journalBodyCache;
         private readonly EventHandler _lChangedHandler;
 
         // Relocalizable chrome (ApplyLocalization rewrites these on L.Changed)
@@ -522,9 +521,7 @@ namespace RvtMcp.Plugin.Views
             }
             else if (entry.ToolName == "send_code_to_revit" && string.IsNullOrEmpty(entry.CodeSnippet))
             {
-                _warningLabel.Text = IsRerunPossible(entry)
-                    ? L.T("security.send_code.journal_redacted_rerun")
-                    : L.T("security.send_code.redacted_no_rerun");
+                _warningLabel.Text = L.T("security.send_code.redacted_no_rerun");
                 _warningLabel.Visibility = Visibility.Visible;
             }
             else if (entry.ParamsTruncated)
@@ -770,52 +767,21 @@ namespace RvtMcp.Plugin.Views
         {
             if (entry == null || entry.IsHistorical || entry.ParamsTruncated)
                 return false;
-            // send_code bodies are redacted to {code_hash, code_length} unless
-            // CacheSendCodeBodies is on — fall back to the send-code journal.
+            // send_code bodies are redacted to {code_hash, code_length} unless CacheSendCodeBodies is on.
             if (entry.ToolName == "send_code_to_revit" && string.IsNullOrEmpty(entry.CodeSnippet))
-                return ResolveRedactedSendCodeBody(entry) != null;
+                return false;
             return true;
-        }
-
-        /// <summary>Journal body for a redacted send_code entry, or null (cached per hash).</summary>
-        private string ResolveRedactedSendCodeBody(McpCallEntry entry)
-        {
-            try
-            {
-                var hash = JObject.Parse(entry.ParamsJson)?.Value<string>("code_hash");
-                if (string.IsNullOrEmpty(hash)) return null;
-                if (_journalBodyCache == null)
-                    _journalBodyCache = new Dictionary<string, string>(StringComparer.Ordinal);
-                if (_journalBodyCache.TryGetValue(hash, out var cached))
-                    return cached;
-                var body = SendCodeJournal.TryFindCodeByHash(hash);
-                _journalBodyCache[hash] = body;
-                return body;
-            }
-            catch { return null; }
         }
 
         private async void OnRerunClick(object sender, RoutedEventArgs e)
         {
             if (!IsRerunPossible(_selectedEntry)) return;
 
-            string paramsOverride = null;
             if (_selectedEntry.ToolName == "send_code_to_revit")
             {
-                var redacted = string.IsNullOrEmpty(_selectedEntry.CodeSnippet);
-                if (redacted)
-                {
-                    var body = ResolveRedactedSendCodeBody(_selectedEntry);
-                    if (body == null) return; // IsRerunPossible already gated; defensive
-                    paramsOverride = new JObject { ["code"] = body }
-                        .ToString(Newtonsoft.Json.Formatting.None);
-                }
-                var prompt = redacted
-                    ? L.T("security.send_code.rerunConfirmRedacted")
-                    : L.T("security.send_code.rerunConfirm");
                 var confirm = MessageBox.Show(
                     this,
-                    prompt,
+                    L.T("security.send_code.rerunConfirm"),
                     L.T("security.send_code.rerunConfirmTitle"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
@@ -829,7 +795,7 @@ namespace RvtMcp.Plugin.Views
             try
             {
                 var toolName = _selectedEntry.ToolName;
-                var paramsJson = paramsOverride ?? _selectedEntry.ParamsJson;
+                var paramsJson = _selectedEntry.ParamsJson;
                 var originalIndex = _selectedEntry.Index;
                 var originalResultJson = _selectedEntry.ResultJson;
 

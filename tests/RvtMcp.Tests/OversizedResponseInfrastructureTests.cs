@@ -7,30 +7,9 @@ namespace RvtMcp.Tests
 {
     public class OversizedResponseInfrastructureTests
     {
-        [Fact]
-        public void Policy_catalog_returns_exact_scope_hint_for_scoped_read_tool()
-        {
-            var hint = ResponseSizePolicyCatalog.GetNarrowingHint("clash_detection");
-
-            Assert.Contains("categoriesA", hint);
-            Assert.Contains("categoriesB", hint);
-            Assert.Contains("maxResults", hint);
-        }
-
-        [Fact]
-        public void Policy_catalog_returns_new_scope_hint_for_previously_unbounded_tool()
-        {
-            var hint = ResponseSizePolicyCatalog.GetNarrowingHint("get_group_members");
-
-            Assert.Contains("startIndex", hint);
-            Assert.Contains("maxResults", hint);
-        }
 
         [Theory]
-        [InlineData("select_elements", "{}", true)]
         [InlineData("activate_view", "{}", true)]
-        [InlineData("ai_element_filter", "{\"select\":true}", true)]
-        [InlineData("ai_element_filter", "{\"select\":false}", false)]
         public void Policy_catalog_recognizes_ui_side_effects(string command, string parameters, bool expected)
         {
             Assert.Equal(expected, ResponseSizePolicyCatalog.HasUiSideEffect(command, parameters));
@@ -38,7 +17,6 @@ namespace RvtMcp.Tests
 
         [Theory]
         [InlineData("send_code_to_revit", true)]
-        [InlineData("run_baked_tool", true)]
         [InlineData("create_grid", false)]
         public void Mutation_policy_marks_arbitrary_code_outcomes_indeterminate(string command, bool expected)
         {
@@ -47,10 +25,6 @@ namespace RvtMcp.Tests
 
         [Theory]
         [InlineData("create_grid", true, true)]
-        [InlineData("select_elements", false, true)]
-        [InlineData("export_room_data", true, false)]
-        [InlineData("export_shared_parameter_file", true, false)]
-        [InlineData("workflow_model_audit", true, false)]
         public void Mutation_policy_overrides_activity_name_heuristics(
             string command,
             bool classifiedAsWrite,
