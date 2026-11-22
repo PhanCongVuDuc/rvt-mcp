@@ -37,8 +37,11 @@ namespace RvtMcp.Server
                         }
                         if (targetCtx.Payload != null)
                             result = TextResult(MetaTools.TargetEnvelope(targetCtx.Payload), failed: true);
-                        return Apply(request.Params, result, config, session, durationMs: clock.ElapsedMilliseconds,
+                        var final = Apply(request.Params, result, config, session, durationMs: clock.ElapsedMilliseconds,
                             changes: capture.Changes, history: capture.History);
+                        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
+                            ServerToast.Instance?.Record(request.Params?.Name, final.IsError == true, ToolGateway.CurrentRevitVersion);
+                        return final;
                     }
                 }
                 finally

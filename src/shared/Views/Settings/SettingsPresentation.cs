@@ -13,10 +13,6 @@ namespace RvtMcp.Plugin.Views.Settings
         string EffectiveLanguage { get; }
         bool IsLanguageWriteDisabled { get; }
         bool ToastEnabled { get; }
-        /// <summary>Wordmark on the activity card. Applied and saved immediately, not staged.</summary>
-        bool ShowBranding { get; }
-        /// <summary>Corner, drag and offset of the activity card. Applied and saved immediately, not staged.</summary>
-        ToastPositionOptions ToastPosition { get; }
         int ToastIdleSeconds { get; set; }
         bool CacheSendCodeBodies { get; set; }
         bool PersistSendCodeBodies { get; set; }
@@ -32,10 +28,6 @@ namespace RvtMcp.Plugin.Views.Settings
         bool CanCopyPort { get; }
         string PortText { get; }
         void SetToastEnabled(bool enabled);
-        /// <summary>Show or hide the activity-card wordmark and save the preference across sessions.</summary>
-        void SetShowBranding(bool show);
-        /// <summary>Apply the card position preferences to the open card and save them across sessions.</summary>
-        void SetToastPosition(ToastPositionOptions options);
         void SetLanguage(string language);
         /// <summary>Same as the ribbon MCP toggle: start or stop the plugin listener.</summary>
         void SetListenerRunning(bool running);

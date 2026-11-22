@@ -82,6 +82,8 @@ namespace RvtMcp.Server
             var session = new Memory.SessionContext(config.EnableCallLogOrDefault);
             ToolGateway.Session = session;
             RevitResources.Session = session;
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
+                ServerToast.Instance = ServerToast.TryCreate(config);
 
             int httpIndex = Array.IndexOf(args, "--http");
             if (httpIndex >= 0)

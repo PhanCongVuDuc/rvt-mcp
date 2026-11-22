@@ -2,7 +2,6 @@ using System;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
 using RvtMcp.Plugin.Views;
-using RvtMcp.Plugin.Views.Toast;
 using RvtMcp.Plugin.Views.Settings;
 
 namespace RvtMcp.Plugin
@@ -30,7 +29,6 @@ namespace RvtMcp.Plugin
                 ToastEnabledChanged?.Invoke(this, EventArgs.Empty);
             }
         }
-        public McpToastNotifier ToastNotifier { get; private set; }
 
         private McpEventHandler _handler;
         private ExternalEvent _externalEvent;
@@ -39,8 +37,6 @@ namespace RvtMcp.Plugin
         private HistoryWindow _historyWindow;
         private SettingsWindow _settingsWindow;
         private UIControlledApplication _ribbonApplication;
-        private bool _mainWindowCaptured;
-        private System.Windows.Threading.Dispatcher _revitDispatcher;
         private Update.UpdateNoticeCoordinator _updateNotice;
 
         public Result OnStartup(UIControlledApplication application)
@@ -62,11 +58,7 @@ namespace RvtMcp.Plugin
             DebugLog("OnStartup: McpLogger + SessionLog OK");
 
             _dispatcher = new CommandDispatcher();
-            var toastHost = new McpToastHost(() => Config?.ToastIdleSecondsOrDefault ?? RvtMcpConfig.DefaultToastIdleSeconds);
-            toastHost.SetShowBranding(Config.ShowBrandingOrDefault);
-            toastHost.SetPositionOptions(Config.ToastPositionOrDefault);
-            ToastNotifier = new McpToastNotifier(toastHost, () => ToastEnabled);
-            _handler = new McpEventHandler(_dispatcher, SessionLog, ToastNotifier);
+            _handler = new McpEventHandler(_dispatcher, SessionLog);
             _externalEvent = ExternalEvent.Create(_handler);
             application.ControlledApplication.DocumentChanged += McpChangeTracker.OnDocumentChanged;
             application.ViewActivated += Survey.SurveyHistoryBridge.Invalidate;
@@ -81,7 +73,7 @@ namespace RvtMcp.Plugin
             var ribbonResult = RibbonSetup.Create(application, Config);
             DebugLog("OnStartup: RibbonSetup OK");
 
-            _idlingUpdater = new IdlingUpdater(ribbonResult, ToastNotifier);
+            _idlingUpdater = new IdlingUpdater(ribbonResult);
             application.Idling += OnIdling;
             DebugLog("OnStartup: END");
 
@@ -102,7 +94,6 @@ namespace RvtMcp.Plugin
 
             StopTransport();
             _handler?.CancelAll();
-            ToastNotifier?.Shutdown();
             _externalEvent?.Dispose();
 
             Instance = null;
@@ -202,49 +193,8 @@ namespace RvtMcp.Plugin
             _settingsWindow?.FocusLanguage();
         }
 
-        public void CaptureMainWindowHandle(IntPtr hwnd)
-        {
-            if (hwnd == IntPtr.Zero)
-                return;
-            ToastNotifier?.SetOwnerHandle(hwnd);
-            try
-            {
-                _revitDispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
-                ToastNotifier?.SetHostDispatcher(_revitDispatcher);
-            }
-            catch { }
-        }
-
-        /// <summary>Open History on Revit's UI dispatcher when called by the toast window.</summary>
-        public void ShowOrFocusHistoryWindowFromToast()
-        {
-            var dispatcher = _revitDispatcher;
-            if (dispatcher == null)
-            {
-                DebugLog("Toast history click ignored: Revit dispatcher is not captured.");
-                return;
-            }
-
-            if (dispatcher.CheckAccess())
-                ShowOrFocusHistoryWindow();
-            else
-                dispatcher.BeginInvoke(new Action(ShowOrFocusHistoryWindow),
-                    System.Windows.Threading.DispatcherPriority.Normal);
-        }
-
         private void OnIdling(object sender, IdlingEventArgs e)
         {
-            // Capture the owner early so pre-command toasts (e.g. agent
-            // connected) anchor to the Revit window instead of the screen.
-            if (!_mainWindowCaptured)
-            {
-                var hwnd = _ribbonApplication?.MainWindowHandle ?? IntPtr.Zero;
-                if (hwnd != IntPtr.Zero)
-                {
-                    CaptureMainWindowHandle(hwnd);
-                    _mainWindowCaptured = true;
-                }
-            }
             _updateNotice?.OnIdling(_ribbonApplication?.MainWindowHandle ?? IntPtr.Zero);
             _idlingUpdater?.Update(IsTransportRunning, Transport, SessionLog, ToastEnabled);
         }

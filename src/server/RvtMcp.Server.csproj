@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <!-- Windows SDK projection for Windows.UI.Notifications (ServerToast). -->
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <RootNamespace>RvtMcp.Server</RootNamespace>
     <AssemblyName>RvtMcp.Server</AssemblyName>
     <LangVersion>latest</LangVersion>
@@ -38,7 +40,6 @@
   <!-- Shared config (A9) — pulled in as source so server binary has zero extra deps -->
   <ItemGroup>
     <Compile Include="..\shared\Config\RvtMcpConfig.cs" Link="Shared\RvtMcpConfig.cs" />
-    <Compile Include="..\shared\Config\ToastPositionOptions.cs" Link="Shared\ToastPositionOptions.cs" />
     <Compile Include="..\shared\Logging\PersistSendCodeTtl.cs" Link="Shared\PersistSendCodeTtl.cs" />
     <Compile Include="..\shared\Security\BakeRedactor.cs" Link="Shared\BakeRedactor.cs" />
     <Compile Include="..\shared\Security\SecretMasker.cs" Link="Shared\SecretMasker.cs" />

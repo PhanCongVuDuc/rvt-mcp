@@ -71,12 +71,6 @@ namespace RvtMcp.Tests
             Assert.True(fileLog > normalize, "mcp-calls.jsonl (History of past sessions) must log the outcome");
             Assert.True(sessionLog > normalize, "History must record the outcome");
             Assert.DoesNotContain("Success = result.Success", source);
-
-            var toast = source.IndexOf("_toastNotifier?.OnCompleted(", sessionLog, StringComparison.Ordinal);
-            Assert.True(toast > sessionLog, "toast call must follow the session log on the success path");
-            var toastArgs = source.Substring(toast, source.IndexOf(");", toast, StringComparison.Ordinal) - toast);
-            Assert.Contains("outcome.Success", toastArgs);
-            Assert.Contains("outcome.Error", toastArgs);
         }
 
         private static string ReadSource(string folder, string file, [CallerFilePath] string testFile = "")

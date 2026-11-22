@@ -22,8 +22,6 @@ namespace RvtMcp.Plugin.Commands
             if (!persisted && !string.IsNullOrWhiteSpace(saveError))
                 App.DebugLog("Toast preference could not be saved: " + saveError);
 
-            App.Instance.ToastNotifier?.OnToastEnabledChanged(
-                App.Instance.ToastEnabled, persisted);
 
             return Result.Succeeded;
         }

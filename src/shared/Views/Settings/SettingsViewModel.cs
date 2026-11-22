@@ -17,8 +17,6 @@ namespace RvtMcp.Plugin.Views.Settings
         private readonly Dispatcher _dispatcher;
         private RvtMcpConfig _snapshot;
         private bool _toastEnabled;
-        private bool _showBranding;
-        private ToastPositionOptions _toastPosition = new ToastPositionOptions();
         private int _toastIdleSeconds;
         private bool _persistSendCodeBodies;
         private int _persistSendCodeBodiesHours;
@@ -44,8 +42,6 @@ namespace RvtMcp.Plugin.Views.Settings
             ReloadReadOnly();
             L.Changed += OnLanguageChanged;
             _app.ToastEnabledChanged += OnAppToastEnabledChanged;
-            if (_app.ToastNotifier != null)
-                _app.ToastNotifier.PositionSaved += OnToastPositionSaved;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -58,8 +54,6 @@ namespace RvtMcp.Plugin.Views.Settings
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(RvtMcpConfig.EnvUiLanguage));
         public bool IsLanguageWriteDisabled => HasEnvironmentLanguageOverride;
         public bool ToastEnabled => _toastEnabled;
-        public bool ShowBranding => _showBranding;
-        public ToastPositionOptions ToastPosition => _toastPosition;
         public int ToastIdleSeconds
         {
             get => _toastIdleSeconds;
@@ -122,8 +116,6 @@ namespace RvtMcp.Plugin.Views.Settings
         {
             _snapshot = RvtMcpConfig.LoadReadOnly();
             _toastEnabled = _app.ToastEnabled;
-            _showBranding = _app.ToastNotifier?.ShowBranding ?? _snapshot.ShowBrandingOrDefault;
-            _toastPosition = _app.ToastNotifier?.PositionOptions ?? _snapshot.ToastPositionOrDefault;
             _toastIdleSeconds = _snapshot.ToastIdleSecondsOrDefault;
             _persistSendCodeBodies = _snapshot.IsPersistSendCodeBodiesActive();
             _persistSendCodeBodiesHours = _snapshot.PersistSendCodeBodiesHoursOrDefault;
@@ -261,57 +253,8 @@ namespace RvtMcp.Plugin.Views.Settings
             if (!persisted) App.DebugLog("Settings save enableToast failed: " + error);
             ImmediateWarningKey = persisted ? null : "enableToast";
             ImmediateWarning = persisted ? null : SaveFailed("enableToast");
-            _app.ToastNotifier?.OnToastEnabledChanged(enabled, persisted);
             OnPropertyChanged(nameof(ToastEnabled));
             OnPropertyChanged(nameof(ImmediateWarning));
-        }
-
-        public void SetShowBranding(bool show)
-        {
-            _showBranding = show;
-            if (_app.Config != null) _app.Config.ShowBranding = show;
-            _app.ToastNotifier?.SetShowBranding(show);
-            string error;
-            var persisted = RvtMcpConfig.TrySaveShowBranding(show, out error);
-            if (!persisted) App.DebugLog("Settings save showBranding failed: " + error);
-            ImmediateWarningKey = persisted ? null : "showBranding";
-            ImmediateWarning = persisted ? null : SaveFailed("showBranding");
-            OnPropertyChanged(nameof(ShowBranding));
-            OnPropertyChanged(nameof(ImmediateWarning));
-        }
-
-        public void SetToastPosition(ToastPositionOptions options)
-        {
-            _toastPosition = options ?? new ToastPositionOptions();
-            _app.ToastNotifier?.SetPositionOptions(_toastPosition);
-            string error;
-            var persisted = RvtMcpConfig.TrySaveToastPosition(_toastPosition, out error);
-            if (!persisted) App.DebugLog("Settings save toast position failed: " + error);
-            ImmediateWarningKey = persisted ? null : "toastPosition";
-            ImmediateWarning = persisted ? null : SaveFailed("toastPosition");
-            OnPropertyChanged(nameof(ToastPosition));
-            OnPropertyChanged(nameof(ImmediateWarning));
-        }
-
-        // A drag release is saved on the toast thread; mirror it here on the Settings thread.
-        private void OnToastPositionSaved(bool saved)
-        {
-            if (_disposed) return;
-            Action refresh = () =>
-            {
-                if (_disposed) return;
-                _toastPosition = _app.ToastNotifier?.PositionOptions ?? _toastPosition;
-                ImmediateWarningKey = saved ? null : "toastPosition";
-                ImmediateWarning = saved ? null : SaveFailed("toastPosition");
-                OnPropertyChanged(nameof(ToastPosition));
-                OnPropertyChanged(nameof(ImmediateWarning));
-            };
-            try
-            {
-                if (_dispatcher.CheckAccess()) refresh();
-                else _dispatcher.BeginInvoke(refresh);
-            }
-            catch { }
         }
 
         public void SetLanguage(string requested)
@@ -455,8 +398,6 @@ namespace RvtMcp.Plugin.Views.Settings
             _disposed = true;
             L.Changed -= OnLanguageChanged;
             _app.ToastEnabledChanged -= OnAppToastEnabledChanged;
-            if (_app.ToastNotifier != null)
-                _app.ToastNotifier.PositionSaved -= OnToastPositionSaved;
         }
     }
 }

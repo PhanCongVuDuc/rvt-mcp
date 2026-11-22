@@ -26,7 +26,6 @@ internal static class Program
             CheckStagedFooter();
             CheckInlineApplyError();
             CheckImmediateToast();
-        CheckToastPosition();
             CheckConnection();
             CheckToolsGrid();
             CheckLifecycle();
@@ -99,8 +98,8 @@ internal static class Program
 
             settings.SetImmediateWarning("enableToast", "enableToast: could not be saved");
             Expect(errors["enableToast"].Visibility == Visibility.Visible, "immediate save warning renders under the toast switch");
-            settings.SetImmediateWarning("showBranding", "showBranding: could not be saved");
-            Expect(errors["showBranding"].Visibility == Visibility.Visible, "branding save warning renders under its own switch");
+            settings.SetImmediateWarning("toastIdleSeconds", "toastIdleSeconds: could not be saved");
+            Expect(errors["toastIdleSeconds"].Visibility == Visibility.Visible, "a second warning renders under its own row");
             Expect(errors["enableToast"].Visibility == Visibility.Collapsed, "previous immediate warning is cleared");
             settings.SetImmediateWarning("unknownKey", "Something else failed");
             Expect(Field<TextBlock>(window, "_footerText").Text == "Something else failed", "warning without a row falls back to the footer");
@@ -114,70 +113,15 @@ internal static class Program
         {
             var toggle = Field<CheckBox>(window, "_toastEnabled");
             var idle = Field<ComboBox>(window, "_toastIdle");
-            var brand = Field<CheckBox>(window, "_showBranding");
-            Expect(brand.IsChecked == false && brand.IsEnabled, "branding starts hidden");
-            brand.IsChecked = true;
-            Expect(settings.ShowBranding && !settings.IsDirty, "brand switch applies immediately, not staged");
             idle.SelectedItem = 30;
             Click(Field<Button>(window, "_discard"));
-            Expect(settings.ShowBranding && brand.IsChecked == true, "Discard only reverts staged edits, not immediate branding");
-            Expect(System.Windows.Automation.AutomationProperties.GetName(brand) == "Show branding", "brand switch is named by its row label");
+            Expect((int)idle.SelectedItem == 20, "Discard reverts the staged idle duration");
             toggle.IsChecked = false;
             Expect(!settings.ToastEnabled && !settings.IsDirty, "toast switch applies immediately, not staged");
             Expect(!idle.IsEnabled && (int)idle.SelectedItem == 20, "idle duration is disabled but kept while toast is off");
-            Expect(!brand.IsEnabled && brand.IsChecked == true, "brand switch stays on and disabled while notifications are off");
             Expect(System.Windows.Automation.AutomationProperties.GetName(toggle) == "Show activity notifications", "switch is named by its row label");
         });
-        Console.WriteLine("PASS: toast and branding switches are immediate; both disable while toast is off");
-    }
-
-    private static void CheckToastPosition()
-    {
-        Run((window, settings, tools) =>
-        {
-            var horizontal = Field<ComboBox>(window, "_toastHorizontal");
-            var vertical = Field<ComboBox>(window, "_toastVertical");
-            var drag = Field<CheckBox>(window, "_toastDrag");
-            var reset = Field<Button>(window, "_toastReset");
-            Expect(horizontal.SelectedIndex == 0 && vertical.SelectedIndex == 0 && drag.IsChecked == false,
-                "position defaults to top-left with dragging off");
-            Expect(!reset.IsEnabled, "reset is unavailable until a drag position is saved");
-            Expect(System.Windows.Automation.AutomationProperties.GetName(horizontal) == "Horizontal alignment"
-                && System.Windows.Automation.AutomationProperties.GetName(drag) == "Allow dragging the card",
-                "position controls are named by their row labels");
-
-            horizontal.SelectedIndex = 1;
-            Expect(settings.ToastPosition.Right && !settings.ToastPosition.Bottom && !settings.IsDirty,
-                "horizontal choice applies immediately, not staged");
-            vertical.SelectedIndex = 1;
-            Expect(settings.ToastPosition.Right && settings.ToastPosition.Bottom, "vertical choice is independent of horizontal");
-            drag.IsChecked = true;
-            Expect(settings.ToastPosition.DragEnabled && !settings.IsDirty, "drag switch applies immediately, not staged");
-
-            settings.StoreDraggedOffset(12, -8);
-            Expect(reset.IsEnabled, "reset becomes available after a drag position is saved");
-            drag.IsChecked = false;
-            Expect(settings.ToastPosition.HasOffset && reset.IsEnabled, "turning drag off keeps the saved position");
-            drag.IsChecked = true;
-            horizontal.SelectedIndex = 0;
-            Expect(!settings.ToastPosition.HasOffset && !reset.IsEnabled, "changing a corner clears the saved offset");
-            settings.StoreDraggedOffset(1, 2);
-            Click(reset);
-            Expect(!settings.ToastPosition.HasOffset && settings.ToastPosition.DragEnabled && !reset.IsEnabled,
-                "reset clears only the offset");
-
-            Click(Field<Button>(window, "_discard"));
-            Expect(settings.ToastPosition.Bottom && drag.IsChecked == true, "Discard does not revert immediate position choices");
-
-            settings.SetImmediateWarning("toastPosition", "toastPosition: could not be saved");
-            Expect(Field<System.Collections.Generic.Dictionary<string, TextBlock>>(window, "_fieldErrors")["toastPosition"].Visibility == Visibility.Visible,
-                "a failed position save renders under its row");
-
-            Field<CheckBox>(window, "_toastEnabled").IsChecked = false;
-            Expect(!horizontal.IsEnabled && !vertical.IsEnabled && !drag.IsEnabled && !reset.IsEnabled,
-                "position controls disable while notifications are off");
-        });
-        Console.WriteLine("PASS: toast position controls are immediate, independent, and keep or clear the drag offset correctly");
+        Console.WriteLine("PASS: the toast switch is immediate; idle duration disables while toast is off");
     }
 
     private static void CheckConnection()

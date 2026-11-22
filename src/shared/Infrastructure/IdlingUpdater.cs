@@ -7,18 +7,15 @@ namespace RvtMcp.Plugin
     public class IdlingUpdater
     {
         private readonly RibbonResult _ribbon;
-        private readonly Views.Toast.McpToastNotifier _toastNotifier;
         private DateTime _lastUpdate = DateTime.MinValue;
         private bool _lastRunning;
-        private bool _wasClientConnected;
         private int _lastCount;
         private bool _lastToastEnabled;
         private int _lastLocVersion = -1;
 
-        public IdlingUpdater(RibbonResult ribbon, Views.Toast.McpToastNotifier toastNotifier = null)
+        public IdlingUpdater(RibbonResult ribbon)
         {
             _ribbon = ribbon;
-            _toastNotifier = toastNotifier;
         }
 
         public void Update(bool isRunning, ITransportServer transport, McpSessionLog sessionLog, bool toastEnabled)
@@ -28,23 +25,6 @@ namespace RvtMcp.Plugin
             var now = DateTime.Now;
             if ((now - _lastUpdate).TotalMilliseconds < 1000) return;
             _lastUpdate = now;
-
-            // Toasts held while the frame was minimized/modal flush here.
-            _toastNotifier?.FlushPendingIfUsable();
-
-            // Toast title ("rvt-mcp 2027") so parallel gateways and Revit processes
-            // serving different agents are distinguishable.
-            var year = AuthToken.RevitVersion;
-            _toastNotifier?.SetInstanceInfo(string.IsNullOrEmpty(year)
-                ? Views.BrandAssets.ProductName
-                : Views.BrandAssets.ProductName + " " + year);
-
-            // Rising edge: first client attach (and each re-attach) confirms
-            // the agent↔plugin wire end-to-end.
-            var connected = isRunning && transport != null && transport.IsClientConnected;
-            if (connected && !_wasClientConnected)
-                _toastNotifier?.OnClientConnected(transport.ConnectionInfo);
-            _wasClientConnected = connected;
 
             var count = sessionLog?.Count ?? 0;
 

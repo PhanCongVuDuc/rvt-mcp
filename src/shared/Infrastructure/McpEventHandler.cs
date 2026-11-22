@@ -7,7 +7,6 @@ using Autodesk.Revit.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-using RvtMcp.Plugin.Views.Toast;
 
 namespace RvtMcp.Plugin
 {
@@ -26,16 +25,14 @@ namespace RvtMcp.Plugin
         private readonly ConcurrentQueue<PendingRequest> _queue = new ConcurrentQueue<PendingRequest>();
         private readonly CommandDispatcher _dispatcher;
         private readonly McpSessionLog _sessionLog;
-        private readonly McpToastNotifier _toastNotifier;
-        // Revit's UI thread, where the handler is made (App.OnStartup): the History window's rows and the toast are WPF, so an add-in
+        // Revit's UI thread, where the handler is made (App.OnStartup): the History window's rows are WPF, so an add-in
         // tool answered on a pool thread reports its outcome back here (RunAddinCommand).
         private readonly System.Windows.Threading.Dispatcher _ui = System.Windows.Threading.Dispatcher.CurrentDispatcher;
 
-        public McpEventHandler(CommandDispatcher dispatcher, McpSessionLog sessionLog, McpToastNotifier toastNotifier = null)
+        public McpEventHandler(CommandDispatcher dispatcher, McpSessionLog sessionLog)
         {
             _dispatcher = dispatcher;
             _sessionLog = sessionLog;
-            _toastNotifier = toastNotifier;
 
             try
             {
@@ -52,8 +49,6 @@ namespace RvtMcp.Plugin
 
         public void Execute(UIApplication app)
         {
-            App.Instance?.CaptureMainWindowHandle(app.MainWindowHandle);
-
             while (_queue.TryDequeue(out var request))
             {
                 // Stale command guard: skip if TCS already completed (timeout/cancel)
@@ -94,21 +89,6 @@ namespace RvtMcp.Plugin
                             error = unknownError
                         });
                         request.Tcs.TrySetResult(errorResponse);
-                        try
-                        {
-                            _toastNotifier?.OnCompleted(
-                                request.CommandName,
-                                request.ParamsJson,
-                                null,
-                                false,
-                                unknownError,
-                                sw.ElapsedMilliseconds,
-                                null);
-                        }
-                        catch (Exception toastEx)
-                        {
-                            App.DebugLog("McpToastNotifier.OnCompleted failed (unknown command): " + toastEx.Message);
-                        }
                         break;
                     }
 
@@ -140,21 +120,6 @@ namespace RvtMcp.Plugin
                             hint = validation.Hint
                         });
                         request.Tcs.TrySetResult(validationResponse);
-                        try
-                        {
-                            _toastNotifier?.OnCompleted(
-                                request.CommandName,
-                                request.ParamsJson,
-                                null,
-                                false,
-                                validationError,
-                                sw.ElapsedMilliseconds,
-                                command.Description);
-                        }
-                        catch (Exception toastEx)
-                        {
-                            App.DebugLog("McpToastNotifier.OnCompleted failed (validation): " + toastEx.Message);
-                        }
                         break;
                     }
 
@@ -233,7 +198,7 @@ namespace RvtMcp.Plugin
                     string rejectError = result.Success && !preGuard.Value<bool>("success")
                         ? preGuard.Value<string>("error") : null;
 
-                    // Toast, History and mcp-calls.jsonl report one outcome, judged after the
+                    // History and mcp-calls.jsonl report one outcome, judged after the
                     // size guard so a rejected response is not recorded as a success.
                     var outcome = CommandOutcome.Normalize(
                         request.CommandName, result.Success, handlerData, resultError, rejectError);
@@ -262,22 +227,6 @@ namespace RvtMcp.Plugin
                     });
 
                     request.Tcs.TrySetResult(response);
-                    try
-                    {
-                        // Use redacted payload (same policy as session log) — never raw result.Data.
-                        _toastNotifier?.OnCompleted(
-                            request.CommandName,
-                            request.ParamsJson,
-                            responseResultJson,
-                            outcome.Success,
-                            outcome.Error,
-                            sw.ElapsedMilliseconds,
-                            command.Description);
-                    }
-                    catch (Exception toastEx)
-                    {
-                        App.DebugLog("McpToastNotifier.OnCompleted failed (success path): " + toastEx.Message);
-                    }
                 }
                 catch (Exception ex)
                 {
@@ -319,21 +268,6 @@ namespace RvtMcp.Plugin
                         catch { errorEnvelope["changes"] = ChangeSummary.Omitted(); }
                     }
                     request.Tcs.TrySetResult(errorEnvelope.ToString(Formatting.None));
-                    try
-                    {
-                        _toastNotifier?.OnCompleted(
-                            request.CommandName,
-                            request.ParamsJson,
-                            null,
-                            false,
-                            exError,
-                            sw.ElapsedMilliseconds,
-                            null);
-                    }
-                    catch (Exception toastEx)
-                    {
-                        App.DebugLog("McpToastNotifier.OnCompleted failed (exception path): " + toastEx.Message);
-                    }
                 }
 
                 break;
@@ -348,8 +282,8 @@ namespace RvtMcp.Plugin
 
         /// <summary>
         /// One add-in tool (list_addin_commands / call_addin_command) off the ExternalEvent, on the pool thread
-        /// <see cref="AddinCommandRoute"/> runs it on: the same read-only check, schema check, response guard, call log, History row and
-        /// toast as <see cref="Execute"/>, without Revit's thread. The add-in tools read no UIApplication - AddinCommandRegistry reaches
+        /// <see cref="AddinCommandRoute"/> runs it on: the same read-only check, schema check, response guard, call log and History row
+        /// as <see cref="Execute"/>, without Revit's thread. The add-in tools read no UIApplication - AddinCommandRegistry reaches
         /// the add-in through the AppDomain - so the handler gets none. Returns the wire response.
         /// </summary>
         public string RunAddinCommand(PendingRequest request)
@@ -424,7 +358,7 @@ namespace RvtMcp.Plugin
                     : responseResultJson;
                 Report(request, outcome.Success, outcome.Error, sw.ElapsedMilliseconds, resultJson, description, runtimeConfig,
                     SummaryGenerator.Generate(request.CommandName, request.ParamsJson, sessionResult, outcome.Success, outcome.Error),
-                    preserveSummary: false, sessionResult: sessionResult, toastResult: responseResultJson);
+                    preserveSummary: false, sessionResult: sessionResult);
                 return guarded.ToString(Formatting.None);
             }
             catch (Exception ex)
@@ -437,10 +371,10 @@ namespace RvtMcp.Plugin
             }
         }
 
-        // The call log line, the History row and the toast of one tool call. The log is a file and is written here; the row and the toast
-        // are WPF and go to Revit's UI thread. An exception out of them must not change the answer already decided.
+        // The call log line and the History row of one tool call. The log is a file and is written here; the row
+        // is WPF and go to Revit's UI thread. An exception out of them must not change the answer already decided.
         private void Report(PendingRequest request, bool success, string error, long durationMs, string resultJson, string description,
-            RvtMcpConfig runtimeConfig, string summary, bool preserveSummary, string sessionResult = null, string toastResult = null)
+            RvtMcpConfig runtimeConfig, string summary, bool preserveSummary, string sessionResult = null)
         {
             try
             {
@@ -468,8 +402,6 @@ namespace RvtMcp.Plugin
                         Summary = summary,
                         PreserveSummary = preserveSummary
                     });
-                    // As Execute: the toast gets the whole redacted result, the History row the 10 KB cut.
-                    _toastNotifier?.OnCompleted(request.CommandName, request.ParamsJson, toastResult, success, error, durationMs, description);
                 }
                 catch (Exception reportEx)
                 {
