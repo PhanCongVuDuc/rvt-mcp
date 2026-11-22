@@ -15,7 +15,7 @@ namespace RvtMcp.Tests
         {
             var set = ToolsetFilter.Resolve(null);
             Assert.Equal(
-                new[] { "create", "meta", "query", "view" },
+                new[] { "export", "meta", "query", "sheets", "view" },
                 set.OrderBy(s => s).ToArray());
         }
 
@@ -24,7 +24,7 @@ namespace RvtMcp.Tests
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig { Toolsets = new List<string>() });
             Assert.Equal(
-                new[] { "create", "meta", "query", "view" },
+                new[] { "export", "meta", "query", "sheets", "view" },
                 set.OrderBy(s => s).ToArray());
         }
 
@@ -66,10 +66,10 @@ namespace RvtMcp.Tests
         {
             var set = ToolsetFilter.Resolve(new RvtMcpConfig
             {
-                Toolsets = new List<string> { "QUERY", "Create" }
+                Toolsets = new List<string> { "QUERY", "Sheets" }
             });
             Assert.Contains("query", set);
-            Assert.Contains("create", set);
+            Assert.Contains("sheets", set);
         }
 
         [Fact]
@@ -173,9 +173,9 @@ namespace RvtMcp.Tests
         // --- Invariants ---------------------------------------------------
 
         [Fact]
-        public void KnownToolsets_Contains23Entries()
+        public void KnownToolsets_Contains5Entries()
         {
-            Assert.Equal(23, ToolsetFilter.KnownToolsets.Length);
+            Assert.Equal(5, ToolsetFilter.KnownToolsets.Length);
         }
 
         [Fact]

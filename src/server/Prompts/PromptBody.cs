@@ -102,7 +102,7 @@ namespace RvtMcp.Server.Prompts
             return
                 "This prompt works through revit_send_code_to_revit, which is not exposed right now.\n" +
                 "send_code is removed when the server runs with --read-only or --disable-send-code,\n" +
-                "or when neither the 'meta' nor 'toolbaker' toolset is enabled.\n" +
+                "or when the 'meta' toolset is not enabled.\n" +
                 "Remove those flags or enable the toolset, then restart the MCP connection.";
         }
     }

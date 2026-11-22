@@ -32,9 +32,7 @@
     <Compile Include="..\..\src\shared\Infrastructure\SendCodeStaleAssemblyGuard.cs" Link="Shared\SendCodeStaleAssemblyGuard.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\NoDocumentGuidance.cs" Link="Shared\NoDocumentGuidance.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\RecentFileList.cs" Link="Shared\RecentFileList.cs" />
-    <Compile Include="..\..\src\shared\Handlers\MepMembershipPolicy.cs" Link="Shared\MepMembershipPolicy.cs" />
     <Compile Include="..\..\src\shared\Handlers\OpenModelLocalPolicy.cs" Link="Shared\OpenModelLocalPolicy.cs" />
-    <Compile Include="..\..\src\shared\Handlers\ViewportLayoutMath.cs" Link="Shared\ViewportLayoutMath.cs" />
     <Compile Include="..\..\src\shared\Security\PathAllowlist.cs" Link="Shared\PathAllowlist.cs" />
     <Compile Include="..\..\src\shared\Security\DiscoveryPublisher.cs" Link="Shared\DiscoveryPublisher.cs" />
     <Compile Include="..\..\src\shared\Security\AuthToken.cs" Link="Shared\AuthToken.cs" />
@@ -60,13 +58,7 @@
     <Compile Include="..\..\src\shared\Infrastructure\ResponsePaging.cs" Link="Shared\ResponsePaging.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\RequestWait.cs" Link="Shared\RequestWait.cs" />
     <Compile Include="..\..\src\shared\Config\StatusPrivacySection.cs" Link="Shared\StatusPrivacySection.cs" />
-    <Compile Include="..\..\src\shared\Handlers\BatchExecutor.cs" Link="Shared\BatchExecutor.cs" />
     <Compile Include="..\..\src\shared\Infrastructure\CommandOutcome.cs" Link="Shared\CommandOutcome.cs" />
-    <Compile Include="..\..\src\shared\ToolBaker\BakedToolRegistry.cs" Link="Shared\BakedToolRegistry.cs" />
-    <Compile Include="..\..\src\shared\ToolBaker\BakedToolParameterDefaults.cs" Link="Shared\BakedToolParameterDefaults.cs" />
-    <Compile Include="..\..\src\shared\ToolBaker\BakedToolRuntimeCache.cs" Link="Shared\BakedToolRuntimeCache.cs" />
-    <Compile Include="..\..\src\shared\ToolBaker\BakedToolDispatchAuthorizer.cs" Link="Shared\BakedToolDispatchAuthorizer.cs" />
-    <Compile Include="..\..\src\shared\ToolBaker\BakeCompilerPolicy.cs" Link="Shared\BakeCompilerPolicy.cs" />
     <Compile Include="..\..\src\shared\Lint\ViewNamingAnalyzer.cs" Link="Shared\ViewNamingAnalyzer.cs" />
     <Compile Include="..\..\src\shared\Lint\FirmProfile.cs" Link="Shared\FirmProfile.cs" />
     <Compile Include="..\..\src\shared\Lint\FirmProfileLibrary.cs" Link="Shared\FirmProfileLibrary.cs" />

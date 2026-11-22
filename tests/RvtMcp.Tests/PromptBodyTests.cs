@@ -40,11 +40,11 @@ namespace RvtMcp.Tests
         [Fact]
         public void Enable_notice_suggests_merged_csv_in_known_toolset_order()
         {
-            // Default config enables query,create,view,meta.
-            var rendered = PromptBody.Render(Body, new[] { "workflows", "families", "lint" }, false);
+            ServerState.Config = new RvtMcpConfig { Toolsets = new List<string> { "query" } };
+            var rendered = PromptBody.Render(Body, new[] { "sheets", "export" }, false);
 
             Assert.Contains(
-                "--toolsets query,create,view,families,meta,lint,workflows",
+                "--toolsets query,export,sheets",
                 rendered.Replace("  ", " "));
         }
 
@@ -57,7 +57,7 @@ namespace RvtMcp.Tests
             };
             var args = new Dictionary<string, string> { ["scope"] = "level 2" };
 
-            var rendered = PromptBody.Render(Body, new[] { "workflows" }, false, args);
+            var rendered = PromptBody.Render(Body, new[] { "sheets" }, false, args);
 
             Assert.Equal(Body.Replace("{scope}", "level 2"), rendered);
         }
@@ -65,9 +65,9 @@ namespace RvtMcp.Tests
         [Fact]
         public void Enable_notice_warns_when_read_only_would_restrip_write_capable_sets()
         {
-            ServerState.Config = new RvtMcpConfig { ReadOnly = true };
+            ServerState.Config = new RvtMcpConfig { ReadOnly = true, Toolsets = new List<string> { "query" } };
 
-            var rendered = PromptBody.Render(Body, new[] { "workflows" }, false);
+            var rendered = PromptBody.Render(Body, new[] { "export" }, false);
 
             Assert.Contains("--read-only", rendered);
             Assert.Contains("write-capable", rendered);

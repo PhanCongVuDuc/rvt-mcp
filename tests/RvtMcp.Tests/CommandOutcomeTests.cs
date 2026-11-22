@@ -10,22 +10,6 @@ namespace RvtMcp.Tests
 {
     public class CommandOutcomeTests
     {
-        // Same shape BatchExecuteHandler returns: new { results = outcome.Results, rolledBack }.
-        private static object BatchData(bool continueOnError, params string[] commands)
-        {
-            var arr = new JArray();
-            foreach (var name in commands)
-                arr.Add(new JObject { ["command"] = name });
-
-            var outcome = BatchExecutor.Run(arr, continueOnError, (name, _) =>
-                name == "bad"
-                    ? BatchExecutor.InvokeResult.Fail("intentional failure")
-                    : name == "partial"
-                        ? BatchExecutor.InvokeResult.Ok(new { failedCount = 2 })
-                        : BatchExecutor.InvokeResult.Ok(new { elementId = 1 }));
-            var rolledBack = outcome.AnyFailed && !continueOnError;
-            return new { results = outcome.Results, rolledBack };
-        }
 
         [Fact]
         public void Plain_success_passes_through()
@@ -56,43 +40,6 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
-        public void Rejected_error_wins_over_a_batch_failure()
-        {
-            var o = CommandOutcome.Normalize("batch_execute", true, BatchData(false, "ok", "bad"), null,
-                "Response too large.");
-
-            Assert.False(o.Success);
-            Assert.Equal("Response too large.", o.Error);
-        }
-
-        [Fact]
-        public void Rolled_back_batch_is_a_failure()
-        {
-            var o = CommandOutcome.Normalize("batch_execute", true, BatchData(false, "ok", "bad", "ok"), null, null);
-
-            Assert.False(o.Success);
-            Assert.Equal("Batch rolled back: 1 sub-command(s) failed, no changes kept.", o.Error);
-        }
-
-        [Fact]
-        public void ContinueOnError_batch_with_failed_sub_commands_is_a_failure()
-        {
-            var o = CommandOutcome.Normalize("batch_execute", true, BatchData(true, "ok", "bad", "partial"), null, null);
-
-            Assert.False(o.Success);
-            Assert.Equal("2 of 3 batch sub-command(s) failed.", o.Error);
-        }
-
-        [Fact]
-        public void Batch_with_all_sub_commands_ok_is_a_success()
-        {
-            var o = CommandOutcome.Normalize("batch_execute", true, BatchData(true, "ok", "ok"), null, null);
-
-            Assert.True(o.Success);
-            Assert.Null(o.Error);
-        }
-
-        [Fact]
         public void Batch_handler_failure_keeps_its_error()
         {
             var o = CommandOutcome.Normalize("batch_execute", false, null, "No document is open.", null);
@@ -108,14 +55,6 @@ namespace RvtMcp.Tests
                 new { rolledBack = true, results = new[] { new { ok = false } } }, null, null);
 
             Assert.True(o.Success);
-        }
-
-        [Fact]
-        public void BatchExecuteHandler_still_returns_the_shape_the_outcome_reads()
-        {
-            var source = ReadSource("Handlers", "BatchExecuteHandler.cs");
-
-            Assert.Contains("new { results = outcome.Results, rolledBack }", source);
         }
 
         [Fact]

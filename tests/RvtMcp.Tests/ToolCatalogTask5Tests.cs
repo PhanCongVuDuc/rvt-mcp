@@ -19,8 +19,7 @@ namespace RvtMcp.Tests
         {
             var config = new RvtMcpConfig
             {
-                Toolsets = new List<string> { "query", "families", "meta" },
-                EnableToolbaker = false
+                Toolsets = new List<string> { "query", "meta" }
             };
 
             var catalog = ServerToolCatalogBuilder.Build(ToolsetFilter.Resolve(config), config);
@@ -30,7 +29,7 @@ namespace RvtMcp.Tests
             Assert.Contains(catalog.Tools, entry => entry.McpName == "revit_get_current_view_info");
             Assert.DoesNotContain(catalog.Tools, entry => entry.McpName == "revit_create_wall");
 
-            var longRun = Assert.Single(catalog.Tools.Where(entry => entry.McpName == "revit_load_family_from_path"));
+            var longRun = Assert.Single(catalog.Tools.Where(entry => entry.McpName == "revit_open_model"));
             Assert.Equal("long_run_parameter", longRun.Timeout.PolicyKind);
             Assert.Equal(600, longRun.Timeout.ParameterDefaultSeconds);
             Assert.Equal(1, longRun.Timeout.ParameterMinimumSeconds);
@@ -195,9 +194,6 @@ namespace RvtMcp.Tests
                 "revit_list_available_targets",
                 "revit_get_current_target",
                 "revit_switch_target",
-                "revit_list_bake_suggestions",
-                "revit_dismiss_bake_suggestion",
-                "revit_analyze_usage_patterns"
             })
             {
                 var entry = Assert.Single(catalog.Tools.Where(t => t.McpName == name));

@@ -7,7 +7,6 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows.Threading;
 using RvtMcp.Plugin.Localization;
-using RvtMcp.Plugin.ToolBaker;
 using CatalogEntry = RvtMcp.ToolCatalog.ToolCatalogEntry;
 using CatalogStatus = RvtMcp.ToolCatalog.ToolCatalogStatus;
 using CatalogStore = RvtMcp.ToolCatalog.ToolCatalogStore;
@@ -15,10 +14,9 @@ using CatalogCodec = RvtMcp.ToolCatalog.ToolCatalogCodec;
 
 namespace RvtMcp.Plugin.Views.Settings
 {
-    /// <summary>Read-only projection of the current server catalog plus baked metadata.</summary>
+    /// <summary>Read-only projection of the current server catalog </summary>
     public sealed class ToolsViewModel : ISettingsToolsPresentation
     {
-        private readonly BakedToolRegistry _registry;
         private readonly Assembly _summaryAssembly;
         private readonly Dispatcher _dispatcher;
         private readonly List<ToolRow> _allRows = new List<ToolRow>();
@@ -33,9 +31,8 @@ namespace RvtMcp.Plugin.Views.Settings
         private int _cataloguedBuiltInCount;
         private int _bakedCount;
 
-        public ToolsViewModel(BakedToolRegistry registry, Assembly summaryAssembly = null)
+        public ToolsViewModel(Assembly summaryAssembly = null)
         {
-            _registry = registry;
             _summaryAssembly = summaryAssembly ?? Assembly.GetExecutingAssembly();
             _dispatcher = Dispatcher.CurrentDispatcher;
             Rows = new ObservableCollection<ToolRow>();
@@ -189,25 +186,6 @@ namespace RvtMcp.Plugin.Views.Settings
             }).ToList();
             _builtInCount = rows.Count;
             _cataloguedBuiltInCount = catalog.CataloguedBuiltInCount;
-
-            var bakedGate = catalog.Tools.Any(entry => string.Equals(entry.McpName, "revit_run_baked_tool", StringComparison.Ordinal));
-            if (bakedGate && _registry != null)
-            {
-                var bakedTimeout = catalog.Tools.First(entry => string.Equals(entry.McpName, "revit_run_baked_tool", StringComparison.Ordinal)).Timeout;
-                foreach (var meta in _registry.GetAllSortedForList())
-                {
-                    if (meta == null || string.IsNullOrWhiteSpace(meta.Name)) continue;
-                    rows.Add(new ToolRow
-                    {
-                        Name = meta.Name,
-                        Description = Truncate(meta.Description),
-                        Source = SourceBaked,
-                        TimeoutDisplay = TimeoutDisplay(bakedTimeout),
-                        TimeoutHelpText = TimeoutHelp(bakedTimeout),
-                    });
-                }
-                _bakedCount = rows.Count - _builtInCount;
-            }
 
             _allRows.AddRange(rows);
         }

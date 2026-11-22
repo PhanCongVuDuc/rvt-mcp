@@ -70,7 +70,7 @@ namespace RvtMcp.Tests
         [Fact]
         public void No_allowlist_keeps_the_toolset_surface()
         {
-            Assert.Equal(48, Registered(new RvtMcpConfig()).Length);
+            Assert.Equal(14, Registered(new RvtMcpConfig()).Length);
         }
 
         [Fact]

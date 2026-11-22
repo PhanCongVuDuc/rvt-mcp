@@ -58,8 +58,8 @@ namespace RvtMcp.Tests
                 await host.StartAsync(deadline.Token);
                 await using var client = await McpClient.CreateAsync(new StreamClientTransport(output, output), cancellationToken: deadline.Token);
 
-                var response = await client.CallToolAsync("revit_get_element_details",
-                    new Dictionary<string, object> { ["elementIds"] = new long[] { 1 } }, cancellationToken: deadline.Token);
+                var response = await client.CallToolAsync("revit_get_current_view_info",
+                    new Dictionary<string, object>(), cancellationToken: deadline.Token);
 
                 Assert.True(response.IsError == true);
                 var text = ((TextContentBlock)response.Content[0]).Text;

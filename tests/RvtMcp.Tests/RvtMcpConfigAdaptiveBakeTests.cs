@@ -100,19 +100,6 @@ namespace RvtMcp.Tests
             finally { File.Delete(path); }
         }
 
-        [Fact]
-        public void PrintHelp_ListsAdaptiveBakeFlagsAndEnvVars()
-        {
-            var help = CaptureProgramHelp();
-
-            Assert.Contains("--enable-adaptive-bake", help);
-            Assert.Contains("--disable-adaptive-bake", help);
-            Assert.Contains("--cache-send-code-bodies", help);
-            Assert.Contains("--no-cache-send-code-bodies", help);
-            Assert.Contains(RvtMcpConfig.EnvEnableAdaptiveBake, help);
-            Assert.Contains(RvtMcpConfig.EnvCacheSendCodeBodies, help);
-        }
-
         private static string CaptureProgramHelp()
         {
             var method = typeof(Program).GetMethod("PrintHelp", BindingFlags.NonPublic | BindingFlags.Static);

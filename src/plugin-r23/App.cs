@@ -15,8 +15,6 @@ namespace RvtMcp.Plugin
         public bool IsTransportRunning { get; private set; }
         public McpSessionLog SessionLog { get; private set; }
         public CommandDispatcher CommandDispatcher => _dispatcher;
-        public ToolBaker.BakedToolRegistry BakedToolRegistry { get; private set; }
-        public ToolBaker.BakedToolRuntimeCache BakedToolRuntimeCache { get; private set; }
         public RvtMcpConfig Config { get; private set; }
         public McpEventHandler EventHandler => _handler;
         public ExternalEvent ExternalEvent => _externalEvent;
@@ -39,7 +37,6 @@ namespace RvtMcp.Plugin
         private CommandDispatcher _dispatcher;
         private IdlingUpdater _idlingUpdater;
         private HistoryWindow _historyWindow;
-        private BakeInboxWindow _bakeInboxWindow;
         private SettingsWindow _settingsWindow;
         private UIControlledApplication _ribbonApplication;
         private bool _mainWindowCaptured;
@@ -64,11 +61,7 @@ namespace RvtMcp.Plugin
             _updateNotice.Start();
             DebugLog("OnStartup: McpLogger + SessionLog OK");
 
-            BakedToolRuntimeCache = new ToolBaker.BakedToolRuntimeCache();
-            _dispatcher = new CommandDispatcher(BakedToolRuntimeCache);
-            BakedToolRegistry = new ToolBaker.BakedToolRegistry();
-            _dispatcher.LoadBakedTools(BakedToolRegistry);
-            DebugLog("OnStartup: BakedToolRegistry loaded");
+            _dispatcher = new CommandDispatcher();
             var toastHost = new McpToastHost(() => Config?.ToastIdleSecondsOrDefault ?? RvtMcpConfig.DefaultToastIdleSeconds);
             toastHost.SetShowBranding(Config.ShowBrandingOrDefault);
             toastHost.SetPositionOptions(Config.ToastPositionOrDefault);
@@ -85,7 +78,7 @@ namespace RvtMcp.Plugin
             DebugLog("OnStartup: Transport OK");
 
             _ribbonApplication = application;
-            var ribbonResult = RibbonSetup.Create(application, Config, BakedToolRuntimeCache);
+            var ribbonResult = RibbonSetup.Create(application, Config);
             DebugLog("OnStartup: RibbonSetup OK");
 
             _idlingUpdater = new IdlingUpdater(ribbonResult, ToastNotifier);
@@ -104,7 +97,6 @@ namespace RvtMcp.Plugin
             application.Idling -= OnIdling;
             Localization.LocalizationHost.ShutdownPlugin();
             _historyWindow?.Close();
-            _bakeInboxWindow?.Close();
             _settingsWindow?.CloseForShutdown();
             _updateNotice?.Shutdown();
 
@@ -210,13 +202,6 @@ namespace RvtMcp.Plugin
             _settingsWindow?.FocusLanguage();
         }
 
-        public void ShowOrFocusBakeInboxWindow()
-        {
-            if (_bakeInboxWindow == null || !_bakeInboxWindow.IsLoaded)
-                _bakeInboxWindow = new BakeInboxWindow(BakedToolRegistry, BakedToolRuntimeCache);
-            _bakeInboxWindow.ShowOrFocus();
-        }
-
         public void CaptureMainWindowHandle(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero)
@@ -245,12 +230,6 @@ namespace RvtMcp.Plugin
             else
                 dispatcher.BeginInvoke(new Action(ShowOrFocusHistoryWindow),
                     System.Windows.Threading.DispatcherPriority.Normal);
-        }
-
-        public void RefreshBakedRibbonButtons()
-        {
-            if (Config?.EnableAdaptiveBakeOrDefault == true && _ribbonApplication != null)
-                RibbonSetup.AddOrUpdateBakedToolButtons(_ribbonApplication, BakedToolRuntimeCache);
         }
 
         private void OnIdling(object sender, IdlingEventArgs e)

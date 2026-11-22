@@ -23,16 +23,9 @@ namespace RvtMcp.Tests
         // Server-only tools: they answer from local state, so they are exercised by their own tests.
         private static readonly Dictionary<string, string> ServerOnly = new Dictionary<string, string>
         {
-            ["revit_record_change"] = "ChangeHistoryRuntimeTests",
-            ["revit_get_change_records"] = "ChangeHistoryRuntimeTests",
-            ["revit_resolve_history_identity"] = "ChangeHistoryRuntimeTests",
-            ["revit_list_bake_suggestions"] = "ToolBakerHandlersTests",
-            ["revit_accept_bake_suggestion"] = "ToolBakerHandlersTests",
-            ["revit_dismiss_bake_suggestion"] = "ToolBakerHandlersTests",
             ["revit_list_available_targets"] = "MetaToolShellTests",
             ["revit_get_current_target"] = "MetaToolShellTests",
             ["revit_switch_target"] = "MetaToolShellTests",
-            ["revit_analyze_usage_patterns"] = "MetaToolShellTests",
         };
 
         // Tools that parse JSON text or arrays before sending need a minimal valid value for that parameter.
@@ -72,7 +65,7 @@ namespace RvtMcp.Tests
         {
             var names = AllTools().Select(t => t.Name).ToList();
             Assert.Equal(names.Count, names.Distinct().Count());
-            Assert.True(names.Count >= 236, "Expected the full tool surface, found " + names.Count);
+            Assert.True(names.Count == 14, "Expected the full tool surface, found " + names.Count);
             foreach (var serverOnly in ServerOnly.Keys)
                 Assert.Contains(serverOnly, names);
             Assert.True(ForwardingTools().Count() + ServerOnly.Count == names.Count);

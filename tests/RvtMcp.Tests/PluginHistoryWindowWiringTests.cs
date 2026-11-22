@@ -132,16 +132,6 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
-        public void ShowMessage_wire_payload_stays_english_while_display_localizes()
-        {
-            var source = File.ReadAllText(Path.Combine(GetRepoRoot(),
-                "src", "shared", "Handlers", "ShowMessageHandler.cs"));
-
-            Assert.Contains("TaskDialog.Show(title, displayMessage)", source);
-            Assert.Contains("message_char_count = wireMessage.Length", source);
-        }
-
-        [Fact]
         public void McpEventHandler_unknown_summary_is_localized_and_preserved()
         {
             var source = File.ReadAllText(Path.Combine(GetRepoRoot(),

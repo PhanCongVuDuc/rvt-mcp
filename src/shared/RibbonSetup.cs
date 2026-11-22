@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Collections.Generic;
 using Autodesk.Revit.UI;
 using RvtMcp.Plugin.Localization;
-using RvtMcp.Plugin.ToolBaker;
 
 namespace RvtMcp.Plugin
 {
@@ -12,7 +11,6 @@ namespace RvtMcp.Plugin
         public PushButton ToggleButton { get; set; }
         public PushButton HistoryButton { get; set; }
         public PushButton ToastButton { get; set; }
-        public PushButton BakeInboxButton { get; set; }
         public PushButton SettingsButton { get; set; }
         public PushButton LanguageButton { get; set; }
     }
@@ -24,10 +22,9 @@ namespace RvtMcp.Plugin
         /// <summary>
         /// Revit routes every item added after <c>AddSlideOut()</c> into the
         /// slide-out — so ordering is contractual: all main-panel items first,
-        /// then AddSlideOut, then Settings and Language commands; baked-tool
-        /// buttons added later land below those commands in the slide-out.
+        /// then AddSlideOut, then Settings and Language commands.
         /// </summary>
-        public static RibbonResult Create(UIControlledApplication application, RvtMcpConfig config = null, BakedToolRuntimeCache runtimeCache = null)
+        public static RibbonResult Create(UIControlledApplication application, RvtMcpConfig config = null)
         {
             var assemblyPath = Assembly.GetExecutingAssembly().Location;
             var panel = ResolvePanel(application);
@@ -66,68 +63,19 @@ namespace RvtMcp.Plugin
             };
 
             var stack = panel.AddStackedItems(toggleData, historyData, toastData);
-            PushButton bakeInboxButton = null;
-            if (config?.EnableAdaptiveBakeOrDefault == true)
-                bakeInboxButton = AddBakeInboxButton(panel, assemblyPath);
 
             panel.AddSlideOut();
             var settingsButton = AddSettingsButton(panel, assemblyPath);
             var languageButton = AddLanguageButton(panel, assemblyPath);
-
-            // Baked-tool buttons must come AFTER the slide-out — they intentionally
-            // appear below the Settings/Language commands (there is no API slot
-            // that puts them back in the main panel once a slide-out exists).
-            if (config?.EnableAdaptiveBakeOrDefault == true)
-                AddOrUpdateBakedToolButtons(application, runtimeCache);
 
             return new RibbonResult
             {
                 ToggleButton = stack[0] as PushButton,
                 HistoryButton = stack[1] as PushButton,
                 ToastButton = stack[2] as PushButton,
-                BakeInboxButton = bakeInboxButton,
                 SettingsButton = settingsButton,
                 LanguageButton = languageButton
             };
-        }
-
-        public static void AddOrUpdateBakedToolButtons(UIControlledApplication application, BakedToolRuntimeCache runtimeCache)
-        {
-            if (application == null || runtimeCache == null)
-                return;
-
-            var assemblyPath = Assembly.GetExecutingAssembly().Location;
-            var panel = ResolvePanel(application);
-            foreach (var entry in runtimeCache.GetRibbonEntries())
-            {
-                if (entry.RibbonSlot <= 0 || entry.RibbonSlot > BakedToolRuntimeCache.MaxRibbonSlots)
-                    continue;
-
-                var buttonName = "BakedToolSlot" + entry.RibbonSlot.ToString("00");
-                if (CreatedButtons.Contains(buttonName))
-                    continue;
-
-                var data = new PushButtonData(
-                    buttonName,
-                    ShortLabel(entry.DisplayName),
-                    assemblyPath,
-                    "RvtMcp.Plugin.Commands.RunBakedRibbonSlot" + entry.RibbonSlot.ToString("00") + "Command")
-                {
-                    LargeImage = IconGenerator.Info32,
-                    Image = IconGenerator.Info16,
-                    ToolTip = entry.Description
-                };
-
-                try
-                {
-                    panel.AddItem(data);
-                    CreatedButtons.Add(buttonName);
-                }
-                catch
-                {
-                    CreatedButtons.Add(buttonName);
-                }
-            }
         }
 
         private static PushButton AddSettingsButton(RibbonPanel panel, string assemblyPath)
@@ -179,43 +127,6 @@ namespace RvtMcp.Plugin
                 CreatedButtons.Add(buttonName);
                 return null;
             }
-        }
-
-        private static PushButton AddBakeInboxButton(RibbonPanel panel, string assemblyPath)
-        {
-            const string buttonName = "ShowBakeInbox";
-            if (CreatedButtons.Contains(buttonName))
-                return null;
-
-            var data = new PushButtonData(
-                buttonName,
-                L.T("ribbon.bakeInbox.text"),
-                assemblyPath,
-                "RvtMcp.Plugin.Commands.ShowBakeInboxCommand")
-            {
-                LargeImage = IconGenerator.Info32,
-                Image = IconGenerator.Info16,
-                ToolTip = L.T("ribbon.bakeInbox.tooltip")
-            };
-
-            try
-            {
-                var button = panel.AddItem(data) as PushButton;
-                CreatedButtons.Add(buttonName);
-                return button;
-            }
-            catch
-            {
-                CreatedButtons.Add(buttonName);
-                return null;
-            }
-        }
-
-        private static string ShortLabel(string label)
-        {
-            if (string.IsNullOrWhiteSpace(label))
-                return L.T("ribbon.bakedTool.fallback");
-            return label.Length <= 18 ? label : label.Substring(0, 18);
         }
 
         private static RibbonPanel ResolvePanel(UIControlledApplication application)

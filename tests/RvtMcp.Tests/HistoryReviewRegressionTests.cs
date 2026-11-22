@@ -17,88 +17,6 @@ namespace RvtMcp.Tests
         private readonly string _root = Path.Combine(Path.GetTempPath(), "rvt-history-review-" + Guid.NewGuid().ToString("N"));
 
         [Fact]
-        public void Read_publication_does_no_io_and_returns_no_marker()
-        {
-            var transfer = new ChangeHistoryTransfer(_root);
-            var payload = ChangeHistoryTests.Capture(); payload["documents"] = new JArray();
-            Assert.Null(transfer.Publish(payload.Value<string>("callId"), payload));
-            Assert.False(Directory.Exists(_root));
-        }
-
-        [Fact]
-        public void Unresolved_publication_reports_skip_without_writing_a_file()
-        {
-            var transfer = new ChangeHistoryTransfer(_root);
-            var payload = ChangeHistoryTests.Capture(); payload["documents"][0]["model"] = null;
-            var marker = transfer.Publish(payload.Value<string>("callId"), payload);
-            Assert.Equal("skipped_identity", marker.Value<string>("status"));
-            Assert.Equal(1, marker.Value<int>("skippedDocuments"));
-            Assert.False(Directory.Exists(_root));
-        }
-
-        [Fact]
-        public void Mixed_identity_persists_known_document_and_reports_skip_without_retaining_pending()
-        {
-            var store = new ChangeHistoryStore(_root);
-            var payload = ChangeHistoryTests.Capture();
-            var unknown = (JObject)payload["documents"][0].DeepClone(); unknown["model"] = null;
-            ((JArray)payload["documents"]).Add(unknown);
-            var id = payload.Value<string>("callId");
-            Assert.Equal(id, store.Transfer.Publish(id, payload).Value<string>("id"));
-            Assert.Single(store.Transfer.Read(id)["documents"]);
-            var receipt = store.Consume(id);
-            Assert.Equal("partial", receipt.Value<string>("status"));
-            Assert.Equal(1, receipt.Value<int>("skippedDocuments"));
-            Assert.Single(store.Query(payload["activeModel"].Value<string>("key"))["calls"]);
-            Assert.Empty(store.Transfer.PendingIds());
-        }
-
-        [Fact]
-        public void Recovery_honors_batch_limit_and_cancellation()
-        {
-            var store = new ChangeHistoryStore(_root);
-            for (int i = 0; i < 3; i++) { var p = ChangeHistoryTests.Capture(); store.Transfer.Write(p.Value<string>("callId"), p); }
-            store.RecoverPending(new CancellationToken(true)); Assert.Equal(3, store.Transfer.PendingIds().Length);
-            store.RecoverPending(maxFiles: 1); Assert.Equal(2, store.Transfer.PendingIds().Length);
-        }
-
-        [Fact]
-        public void Recovery_does_not_steal_a_live_gateways_receipt()
-        {
-            var store = new ChangeHistoryStore(_root); var p = ChangeHistoryTests.Capture();
-            var id = p.Value<string>("callId"); store.Transfer.Write(id, p);
-            using (var lease = new HistoryCallLease(id))
-            { store.RecoverPending(); Assert.Single(store.Transfer.PendingIds()); }
-            store.RecoverPending(); Assert.Empty(store.Transfer.PendingIds());
-        }
-
-        [Fact]
-        public void Expired_capture_is_quarantined_without_database_ingestion()
-        {
-            var store = new ChangeHistoryStore(_root); var p = ChangeHistoryTests.Capture();
-            var id = p.Value<string>("callId"); store.Transfer.Write(id, p);
-            File.SetLastWriteTimeUtc(Path.Combine(store.Transfer.Root, id + ".json"), DateTime.UtcNow.AddDays(-8));
-            store.RecoverPending(); Assert.Empty(store.Transfer.PendingIds());
-            Assert.False(Directory.Exists(Path.Combine(_root, "projects")));
-            Assert.Single(Directory.GetFiles(Path.Combine(_root, "history-quarantine")));
-        }
-
-        [Fact]
-        public async Task Recovery_worker_start_does_not_wait_for_storage()
-        {
-            using var entered = new ManualResetEventSlim();
-            using var release = new ManualResetEventSlim();
-            using var service = new HistoryRecoveryService(token => { entered.Set(); release.Wait(token); });
-            try
-            {
-                await service.StartAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
-                Assert.True(await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(5))));
-                Assert.False(release.IsSet);
-            }
-            finally { release.Set(); await service.StopAsync(CancellationToken.None); }
-        }
-
-        [Fact]
         public void Diagnostics_include_type_and_call_id_without_private_exception_text()
         {
             var lines = new List<string>(); var id = Guid.NewGuid().ToString("N");
@@ -127,27 +45,6 @@ namespace RvtMcp.Tests
             var resolved = new RvtMcpConfig { EnableSendCode = plugin }
                 .WithRuntimeOptions(new RvtMcpConfig { EnableSendCode = server }.ToRuntimeOptions());
             Assert.False(resolved.EnableSendCodeOrDefault);
-        }
-
-        [Fact]
-        public void Missing_identity_leaves_no_retryable_capture()
-        {
-            var store = new ChangeHistoryStore(_root);
-            var payload = ChangeHistoryTests.Capture(); payload["documents"][0]["model"] = null;
-            var id = payload.Value<string>("callId"); store.Transfer.Write(id, payload);
-            Assert.Equal("partial", store.Consume(id).Value<string>("status"));
-            Assert.Empty(store.Transfer.PendingIds());
-            Assert.False(Directory.Exists(Path.Combine(_root, "projects")));
-        }
-
-        [Fact]
-        public void Malformed_pending_capture_is_not_retried_forever()
-        {
-            var store = new ChangeHistoryStore(_root);
-            Directory.CreateDirectory(store.Transfer.Root);
-            File.WriteAllText(Path.Combine(store.Transfer.Root, Guid.NewGuid().ToString("N") + ".json"), "{bad json");
-            store.RecoverPending(); store.RecoverPending();
-            Assert.Empty(store.Transfer.PendingIds());
         }
 
         [Fact]

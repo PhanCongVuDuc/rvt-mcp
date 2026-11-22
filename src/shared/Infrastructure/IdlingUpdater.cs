@@ -93,11 +93,6 @@ namespace RvtMcp.Plugin
 
             if (locChanged)
             {
-                if (_ribbon.BakeInboxButton != null)
-                {
-                    _ribbon.BakeInboxButton.ItemText = L.T("ribbon.bakeInbox.text");
-                    _ribbon.BakeInboxButton.ToolTip = L.T("ribbon.bakeInbox.tooltip");
-                }
                 if (_ribbon.SettingsButton != null)
                 {
                     _ribbon.SettingsButton.ItemText = L.T("ribbon.settings.text");
@@ -108,7 +103,6 @@ namespace RvtMcp.Plugin
                     _ribbon.LanguageButton.ItemText = Views.Settings.InvariantLanguageText.RibbonCaption;
                     _ribbon.LanguageButton.ToolTip = L.T("ribbon.language.tooltip");
                 }
-                // Baked-tool button labels are user-authored — verbatim, not localized.
             }
         }
 

@@ -68,7 +68,7 @@ namespace RvtMcp.Tests
             Assert.True(resolved.PersistSendCodeBodies);
             Assert.True(plugin.EnableCallLogOrDefault);
             Assert.Contains("READ_ONLY", ToolReadPolicy.Rejection("create_level", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
-            Assert.Null(ToolReadPolicy.Rejection("list_schedules", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
+            Assert.Null(ToolReadPolicy.Rejection("list_sheets", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
             Assert.Contains("SEND_CODE_DISABLED", ToolReadPolicy.Rejection("send_code_to_revit", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
         }
 
@@ -110,9 +110,9 @@ namespace RvtMcp.Tests
         [Fact]
         public void All_tools_have_explicit_hints_except_send_code_and_read_only_registration_matches_them()
         {
-            var full = new RvtMcpConfig { Toolsets = new List<string> { "all" }, EnableAdaptiveBake = true };
+            var full = new RvtMcpConfig { Toolsets = new List<string> { "all" } };
             var methods = Program.ResolveRegisteredToolMethods(ToolsetFilter.Resolve(full), full).ToArray();
-            Assert.Equal(238, methods.Length);
+            Assert.Equal(14, methods.Length);
             foreach (var method in methods)
             {
                 var attr = method.GetCustomAttribute<McpServerToolAttribute>();
@@ -149,28 +149,13 @@ namespace RvtMcp.Tests
             Assert.Equal(expected, actual);
             Assert.Equal(expected.Where(n => n != "revit_switch_target" && n != "revit_call_addin_command").Select(n => n.Substring(6)).OrderBy(n => n),
                 ToolReadPolicy.ReadOnlyCommands.OrderBy(n => n));
-            Assert.Contains("revit_list_schedules", actual);
+            Assert.Contains("revit_list_sheets", actual);
             Assert.DoesNotContain("revit_capture_view_image", actual);
             Assert.DoesNotContain("revit_export_room_data", actual);
         }
 
         [Theory]
-        [InlineData("revit_get_element_details", false)]
-        [InlineData("revit_create_level", true)]
-        public void Oversized_read_is_rejected_but_completed_write_is_compacted(string name, bool mutation)
-        {
-            var result = RuntimeToolFilter.Apply(new CallToolRequestParams { Name = name },
-                Text(new JObject { ["count"] = 5, ["dry_run"] = false, ["detail"] = new string('界', 12000) }.ToString()), SmallLimits());
-            Assert.Equal(!mutation, result.IsError == true);
-            var text = ((TextContentBlock)result.Content[0]).Text;
-            if (mutation) Assert.True(JObject.Parse(text).Value<bool>("mutation_applied"));
-            else Assert.Contains("RESPONSE_TOO_LARGE", text);
-            Assert.True(Encoding.UTF8.GetByteCount(RuntimeToolFilter.Serialize(result)) <= 8192);
-        }
-
-        [Theory]
         [InlineData("revit_send_code_to_revit")]
-        [InlineData("revit_run_baked_tool")]
         public void Oversized_arbitrary_output_spills_once_with_unknown_mutation_outcome(string name)
         {
             var payload = new string('x', 30000);
@@ -189,11 +174,11 @@ namespace RvtMcp.Tests
         {
             var config = SmallLimits();
             config.EnableResponseGuard = false;
-            var result = RuntimeToolFilter.Apply(new CallToolRequestParams { Name = "revit_get_element_details" },
+            var result = RuntimeToolFilter.Apply(new CallToolRequestParams { Name = "revit_get_current_view_info" },
                 Text(new string('x', 10000)), config);
             Assert.NotEqual(true, result.IsError);
             Assert.Equal(10000, ((TextContentBlock)result.Content[0]).Text.Length);
-            result = RuntimeToolFilter.Apply(new CallToolRequestParams { Name = "revit_get_element_details" },
+            result = RuntimeToolFilter.Apply(new CallToolRequestParams { Name = "revit_get_current_view_info" },
                 Text(new string('x', 40000)), config);
             Assert.True(result.IsError);
             Assert.Contains("RESPONSE_TOO_LARGE", ((TextContentBlock)result.Content[0]).Text);
@@ -217,7 +202,6 @@ namespace RvtMcp.Tests
             {
                 ServerState.Config = new RvtMcpConfig { ReadOnly = true };
                 Assert.Null(ServerState.BlockIfReadOnly("activate_view"));
-                Assert.Null(ServerState.BlockIfReadOnly("show_element_in_view"));
                 Assert.Contains("read_only_mode", ServerState.BlockIfReadOnly("set_view_crop"));
             }
             finally { ServerState.Config = before; }
@@ -249,8 +233,6 @@ namespace RvtMcp.Tests
         }
 
         [Theory]
-        [InlineData("revit_get_element_details")]
-        [InlineData("revit_create_level")]
         [InlineData("revit_send_code_to_revit")]
         public void Minimum_transport_cap_still_bounds_the_final_MCP_result(string name)
         {

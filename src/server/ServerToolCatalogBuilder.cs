@@ -25,20 +25,14 @@ namespace RvtMcp.Server
 
         private static readonly HashSet<string> LongRunTools = new HashSet<string>(StringComparer.Ordinal)
         {
-            "load_family_from_path",
-            "open_model",
-            "link_revit_model",
-            "reload_link"
+            "open_model"
         };
 
         private static readonly HashSet<string> ServerLocalTools = new HashSet<string>(StringComparer.Ordinal)
         {
             "list_available_targets",
             "get_current_target",
-            "switch_target",
-            "list_bake_suggestions",
-            "dismiss_bake_suggestion",
-            "analyze_usage_patterns"
+            "switch_target"
         };
 
         internal static RvtMcp.ToolCatalog.ToolCatalog Build(HashSet<string> enabled, RvtMcpConfig config)
@@ -118,9 +112,7 @@ namespace RvtMcp.Server
             var config = new RvtMcpConfig
             {
                 Toolsets = ToolsetFilter.KnownToolsets.ToList(),
-                ReadOnly = false,
-                EnableToolbaker = true,
-                EnableAdaptiveBake = true
+                ReadOnly = false
             };
             return Program.ResolveRegisteredToolTypes(
                 new HashSet<string>(ToolsetFilter.KnownToolsets, StringComparer.OrdinalIgnoreCase), config);
