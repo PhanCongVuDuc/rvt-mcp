@@ -53,7 +53,7 @@ namespace RvtMcp.Plugin
             return AddinCommandOutcome.Ok(data);
         }
 
-        /// <param name="paramsJson">{ addin, command, args?, entry? ("mcp" | "cli"), read_only? }</param>
+        /// <param name="paramsJson">{ addin, command, args?, entry? ("mcp" | "cli") }</param>
         public static AddinCommandOutcome Call(string paramsJson)
         {
             JObject parameters;
@@ -66,7 +66,6 @@ namespace RvtMcp.Plugin
                 return AddinCommandOutcome.Fail("invalid_params: 'addin' and 'command' are required.");
             var args = parameters["args"] as JObject ?? new JObject();
             var entry = parameters.Value<string>("entry") == "cli" ? "cli" : "mcp";
-            var readOnly = parameters.Value<bool?>("read_only") ?? false;
 
             var registered = Registered();
             if (!registered.TryGetValue(addin, out var function))
@@ -81,14 +80,6 @@ namespace RvtMcp.Plugin
             if (catalog == null)
                 return AddinCommandOutcome.Fail(catalogError);
 
-            if (readOnly && command != CatalogCommand)
-            {
-                var declared = (catalog["commands"] as JArray)?.OfType<JObject>()
-                    .FirstOrDefault(c => string.Equals(c.Value<string>("name"), command, StringComparison.Ordinal));
-                if (declared != null && declared.Value<bool?>("readOnly") != true)
-                    return AddinCommandOutcome.Fail(
-                        $"read_only_blocked: '{addin}' command '{command}' can change the model and this session is read-only.");
-            }
 
             var envelope = new JObject { ["command"] = command, ["args"] = args, ["entry"] = entry };
             return Invoke(addin, function, envelope.ToString(Formatting.None));

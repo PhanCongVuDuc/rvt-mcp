@@ -29,7 +29,7 @@ namespace RvtMcp.Tests
 
         private static string CapturePromptsList()
         {
-            var serverAssembly = typeof(RvtMcp.Server.ToolsetFilter).Assembly;
+            var serverAssembly = typeof(RvtMcp.Server.MetaTools).Assembly;
             var promptType = serverAssembly.GetType("RvtMcp.Server.Prompts.RevitPrompts")!;
 
             var prompts = promptType

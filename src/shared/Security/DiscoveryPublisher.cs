@@ -60,7 +60,7 @@ namespace RvtMcp.Plugin
                     ["port"] = port.HasValue ? new JValue(port.Value) : JValue.CreateNull(),
                     ["pipe_name"] = pipeName == null ? JValue.CreateNull() : new JValue(pipeName),
                     ["auth_token"] = token,
-                    ["capabilities"] = new JArray("tool_catalog")
+                    ["capabilities"] = new JArray("handshake")
                 }.ToString(Formatting.Indented);
                 Write(FileName, json);
                 Write("revit-" + _year + ".json", json);

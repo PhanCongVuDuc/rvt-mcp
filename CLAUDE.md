@@ -101,7 +101,7 @@ MCP Server runs from `src/server/bin/Debug/net8.0-windows10.0.19041.0/RvtMcp.Ser
 
 ### MCP Tools
 - This fork keeps 14 tools (README → Tools). ALL MCP-facing names are prefixed `revit_`; server↔plugin wire command names stay unprefixed.
-- Tools live in `[McpServerToolType, Toolset("<name>")]` classes: `query`, `view`, `export`, `meta`, `sheets`, all on by default. Each tool = `[McpServerTool]` static method. `--tools <csv>` narrows further; `--read-only` filters by each tool's document/file effects and removes `send_code`.
+- Tools live in `[McpServerToolType]` classes in `Program.cs` / `AddinTools.cs`; every tool is always registered (`Program.ResolveRegisteredToolTypes`). `--disable-send-code` hides `send_code` — there are no toolsets, allowlist or read-only mode.
 - `SendToRevit()` helper: transport send + TCS await + 60s timeout (TCS completed on timeout so the UI thread skips the stale request).
 - Activity notifications are Windows notifications raised by the server (`ServerToast`), never drawn on Revit's UI thread.
 

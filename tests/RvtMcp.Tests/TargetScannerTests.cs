@@ -53,7 +53,7 @@ namespace RvtMcp.Tests
                 ["pipe_name"] = null,
                 ["auth_token"] = "tok-" + pid,
                 ["pid"] = pid,
-                ["capabilities"] = new JArray("tool_catalog"),
+                ["capabilities"] = new JArray("handshake"),
                 ["process_start_utc"] = Start.ToString("o"),
             };
 
@@ -70,7 +70,7 @@ namespace RvtMcp.Tests
                 ["port"] = pipeName != null ? null : port,
                 ["pipe_name"] = pipeName,
                 ["auth_token"] = "tok-" + pid,
-                ["capabilities"] = new JArray("tool_catalog"),
+                ["capabilities"] = new JArray("handshake"),
             };
 
         private string Write(string name, JObject json)

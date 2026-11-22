@@ -49,7 +49,7 @@ bimwright runs on `127.0.0.1` only. The attack surface is:
 
 ### Dynamic code path (`send_code_to_revit`)
 - `send_code_to_revit` is on the default `meta` surface and executes through the same local authenticated MCP channel as the rest of the Revit tools.
-- Use `--read-only` or `--disable-send-code` when a host profile should not expose dynamic-code execution.
+- Use `--disable-send-code` when a host profile should not expose dynamic-code execution.
 - With `cacheSendCodeBodies` on, submitted code bodies are kept in the plugin's call log so History can re-run them; otherwise only a hash and length are recorded.
 
 ## Reporting a vulnerability

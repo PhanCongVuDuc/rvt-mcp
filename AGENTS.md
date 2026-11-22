@@ -231,26 +231,8 @@ powershell -ExecutionPolicy Bypass -File "$dir\install.ps1" -Uninstall   # add-i
 | `install.ps1` fails with "machine-wide RvtMcp add-in" | A copy under `%ProgramData%\Autodesk\Revit\Addins\<year>\` has the same AddInId. | Remove it with admin rights, then re-run. |
 | `install.ps1` fails with "Server executable could not start" | Antivirus or policy blocked `rvt-mcp.exe`. The previous install was restored. | Allow the file, then re-run. |
 | Client config parse error after edit | Agent wrote invalid JSON/TOML. | Restore the backup you made, retry with a diff preview. |
-| Server starts but no tools show up | Toolset filter hiding them. | Check `--toolsets` / `--read-only` flags on the host config entry. |
 
 For anything not in this table, open an issue at <https://github.com/bimwright/rvt-mcp/issues> with the host name, Revit year, and the exact error.
-
----
-
-## Fixing UI translations
-
-The plugin UI (ribbon, toasts, History, dialogs) follows the Revit UI language, or the user's pick in Settings → Language (ribbon slide-out → **Language** button), or `BIMWRIGHT_UI_LANGUAGE` if that env var is set (it beats the user's pick at every launch). If the user reports a wrong or awkward string, you can fix it live on their machine — no reinstall, no restart:
-
-1. **Read** `%LOCALAPPDATA%\Bimwright\rvt-mcp\locales\_active.<locale>.json` — every key's currently displayed value, plus the `locked` list.
-2. **Write** the corrected `"key": "text"` pairs into `%LOCALAPPDATA%\Bimwright\rvt-mcp\locales\strings.<locale>.json` (create the file/folder if absent). Keep `{placeholder}` tokens identical to the English value.
-3. **Verify** by re-reading `_active.<locale>.json` after ~1 second (debounced reload) — your key must show the **new value** there. `_report.<locale>.json` lists current validation problems; if your key appears under `rejected`, the `reason` tells you why (`unknown_key`, `placeholder_mismatch`, `locked_key`, …). An **absent** `_report` only means "nothing to report" — it does not prove your edit applied (an ignored wrong-locale file produces no report either). The value inside `_active` is the proof.
-4. Tell the user it applied immediately via hot reload.
-
-**Precondition:** `<locale>` must be the *active* locale — the watcher ignores override files for inactive locales, so those edits apply only when the user next switches to that language. (`en` is the fallback layer and is always live: an `en` override applies under every locale.)
-
-To find the active locale, check `locales\` for `_active.<locale>.json` files — one exists per locale ever used and old files are **never deleted**, so existence proves nothing. The current one is the most recently written (sidecars refresh on every table swap). When in doubt, ask the user which language Settings → Language shows.
-
-Rules: `security.*` keys are locked and can never be overridden. Keys not in `_active` don't exist — don't invent new ones. Never edit files inside the plugin's install directory; only `locales\`. Full details: [docs/localization.md](docs/localization.md).
 
 ---
 

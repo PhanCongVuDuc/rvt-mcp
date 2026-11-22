@@ -7,8 +7,7 @@ using Xunit;
 
 namespace RvtMcp.Tests
 {
-    /// <summary>Spec D2: missing toolsets → enable notice replaces the body;
-    /// send_code gate → its own notice; args substitute after gating.</summary>
+    /// <summary>send_code gate → its own notice; otherwise the body with args substituted.</summary>
     [Collection("ServerStateConfig")]
     public class PromptBodyTests : IDisposable
     {
@@ -25,86 +24,38 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
-        public void Render_returns_enable_notice_when_toolsets_missing()
+        public void Render_returns_body_with_args_applied()
         {
-            var rendered = PromptBody.Render(Body, new[] { "workflows", "families", "lint" }, false);
-
-            Assert.Contains("workflows", rendered);
-            Assert.Contains("families", rendered);
-            Assert.Contains("lint", rendered);
-            Assert.Contains("--toolsets", rendered);
-            Assert.Contains("restart", rendered, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("call revit_get_current_view_info", rendered);
-        }
-
-        [Fact]
-        public void Enable_notice_suggests_merged_csv_in_known_toolset_order()
-        {
-            ServerState.Config = new RvtMcpConfig { Toolsets = new List<string> { "query" } };
-            var rendered = PromptBody.Render(Body, new[] { "sheets", "export" }, false);
-
-            Assert.Contains(
-                "--toolsets query,export,sheets",
-                rendered.Replace("  ", " "));
-        }
-
-        [Fact]
-        public void Render_returns_body_with_args_applied_when_all_enabled()
-        {
-            ServerState.Config = new RvtMcpConfig
-            {
-                Toolsets = new List<string> { "all" }
-            };
-            var args = new Dictionary<string, string> { ["scope"] = "level 2" };
-
-            var rendered = PromptBody.Render(Body, new[] { "sheets" }, false, args);
+            var rendered = PromptBody.Render(Body, requiresSendCode: true,
+                args: new Dictionary<string, string> { ["scope"] = "level 2" });
 
             Assert.Equal(Body.Replace("{scope}", "level 2"), rendered);
         }
 
         [Fact]
-        public void Enable_notice_warns_when_read_only_would_restrip_write_capable_sets()
+        public void Render_returns_sendcode_notice_when_send_code_is_disabled()
         {
-            ServerState.Config = new RvtMcpConfig { ReadOnly = true, Toolsets = new List<string> { "query" } };
+            ServerState.Config = new RvtMcpConfig { EnableSendCode = false };
 
-            var rendered = PromptBody.Render(Body, new[] { "export" }, false);
+            var rendered = PromptBody.Render(Body, requiresSendCode: true);
 
-            Assert.Contains("--read-only", rendered);
-            Assert.Contains("write-capable", rendered);
-        }
-
-        [Fact]
-        public void Render_returns_sendcode_notice_under_read_only()
-        {
-            ServerState.Config = new RvtMcpConfig { ReadOnly = true };
-
-            var rendered = PromptBody.Render(Body, null, requiresSendCode: true);
-
-            Assert.Contains("--read-only", rendered);
             Assert.Contains("revit_send_code_to_revit", rendered);
             Assert.DoesNotContain("call revit_get_current_view_info", rendered);
         }
 
         [Fact]
-        public void Render_returns_sendcode_notice_when_meta_and_toolbaker_absent()
+        public void Render_ignores_disabled_send_code_when_the_prompt_does_not_need_it()
         {
-            ServerState.Config = new RvtMcpConfig
-            {
-                Toolsets = new List<string> { "query" }
-            };
+            ServerState.Config = new RvtMcpConfig { EnableSendCode = false };
 
-            var rendered = PromptBody.Render(Body, null, requiresSendCode: true);
-
-            Assert.Contains("revit_send_code_to_revit", rendered);
-            Assert.DoesNotContain("call revit_get_current_view_info", rendered);
+            Assert.Equal(Body, PromptBody.Render(Body, requiresSendCode: false));
         }
 
         [Fact]
         public void ApplyArgs_leaves_unmatched_placeholders_and_null_is_noop()
         {
-            var args = new Dictionary<string, string> { ["scope"] = "x" };
-            Assert.Equal("a {other} x", PromptBody.ApplyArgs("a {other} {scope}", args));
-            Assert.Equal(Body, PromptBody.ApplyArgs(Body, null));
+            Assert.Equal("a {x} b", PromptBody.ApplyArgs("a {x} b", new Dictionary<string, string> { ["y"] = "1" }));
+            Assert.Equal("a {x} b", PromptBody.ApplyArgs("a {x} b", null));
         }
     }
 }

@@ -36,7 +36,6 @@ namespace RvtMcp.Tests
         private readonly FakeProbe _probe = new FakeProbe();
         private readonly string _originalDirOverride;
         private readonly Func<string, object, int?, Task<JObject>> _originalSend;
-        private readonly RvtMcp.ToolCatalog.ToolCatalog _originalCatalog;
         private readonly RvtMcpConfig _originalConfig;
 
         public ToolGatewayBindingTests()
@@ -45,7 +44,6 @@ namespace RvtMcp.Tests
             Directory.CreateDirectory(_dir);
             _originalDirOverride = ServerAuthToken.DiscoveryDirOverride;
             _originalSend = ToolGateway.SendOverride;
-            _originalCatalog = ServerState.ToolCatalog;
             _originalConfig = ServerState.Config;
 
             ServerAuthToken.DiscoveryDirOverride = _dir;
@@ -54,14 +52,12 @@ namespace RvtMcp.Tests
             ToolGateway.ResetForTests();
             var config = new RvtMcpConfig();
             ServerState.Config = config;
-            ServerState.ToolCatalog = ServerToolCatalogBuilder.Build(ToolsetFilter.Resolve(config), config);
         }
 
         public void Dispose()
         {
             ServerAuthToken.DiscoveryDirOverride = _originalDirOverride;
             ToolGateway.SendOverride = _originalSend;
-            ServerState.ToolCatalog = _originalCatalog;
             ServerState.Config = _originalConfig;
             RevitTargetBinding.ResetForTests();
             ToolGateway.ResetForTests();
@@ -143,7 +139,7 @@ namespace RvtMcp.Tests
                             var req = JObject.Parse(line);
                             var id = req.Value<string>("id");
                             var command = req.Value<string>("command");
-                            if (command == "set_tool_catalog")
+                            if (command == "handshake")
                             {
                                 Interlocked.Increment(ref Handshakes);
                                 if (RequiredToken != null && req.Value<string>("token") != RequiredToken)
@@ -208,7 +204,7 @@ namespace RvtMcp.Tests
                                     var req = JObject.Parse(line);
                                     var id = req.Value<string>("id");
                                     var command = req.Value<string>("command");
-                                    if (command != "set_tool_catalog")
+                                    if (command != "handshake")
                                         lock (Commands) Commands.Add(command);
                                     writer.WriteLine(new JObject { ["id"] = id, ["success"] = true, ["data"] = new JObject { ["ok"] = true } }.ToString(Formatting.None));
                                 }
@@ -244,7 +240,7 @@ namespace RvtMcp.Tests
                 ["port"] = transport == "tcp" ? port : null,
                 ["pipe_name"] = transport == "pipe" ? pipeName : null,
                 ["auth_token"] = token,
-                ["capabilities"] = new JArray("tool_catalog"),
+                ["capabilities"] = new JArray("handshake"),
             };
             var path = Path.Combine(_dir, $"revit-{year}-{pid}.json");
             var tmp = path + ".tmp";

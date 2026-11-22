@@ -135,7 +135,7 @@ namespace RvtMcp.Tests
                 {
                     ["id"] = "1",
                     ["token"] = token,
-                    ["command"] = "set_tool_catalog",
+                    ["command"] = "handshake",
                     ["params"] = JObject.Parse(
                         "{\"schema_version\":1,\"server_version\":\"1.1.0\",\"catalogued_built_in_count\":0,\"tools\":[]}"),
                 };

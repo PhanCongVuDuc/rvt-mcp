@@ -28,7 +28,7 @@
     },
     {
       "name": "revit_call_addin_command",
-      "description_hash": "sha256:bbf27e540df0108db08f66a8ba4288b7f5446cf30b852c64aa7ff4957c04d4ca",
+      "description_hash": "sha256:27cccc37a4938cfab781134b5d2a9b9cfe11662ba8e737d757e30df23c1de37f",
       "inputSchema": {
         "properties": {
           "addin": {

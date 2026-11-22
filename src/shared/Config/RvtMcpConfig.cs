@@ -8,8 +8,8 @@ using Newtonsoft.Json.Linq;
 namespace RvtMcp.Plugin
 {
     /// <summary>
-    /// Single POCO read by both processes: the server consumes <see cref="Target"/> /
-    /// <see cref="Toolsets"/> / <see cref="ReadOnly"/>; the plugin consumes <see cref="AllowLanBind"/>.
+    /// Single POCO read by both processes: the server consumes <see cref="Target"/>; the plugin consumes
+    /// <see cref="AllowLanBind"/>.
     ///
     /// Precedence (high → low): CLI args > env vars (BIMWRIGHT_*) > JSON file.
     /// Fields stay nullable so "not set" is distinguishable from "explicitly default-valued";
@@ -18,13 +18,9 @@ namespace RvtMcp.Plugin
     public class RvtMcpConfig
     {
         public const string EnvTarget                    = "BIMWRIGHT_TARGET";
-        public const string EnvToolsets                  = "BIMWRIGHT_TOOLSETS";
-        public const string EnvTools                     = "BIMWRIGHT_TOOLS";
-        public const string EnvReadOnly                  = "BIMWRIGHT_READ_ONLY";
         public const string EnvAllowLanBind              = "BIMWRIGHT_ALLOW_LAN_BIND";
         public const string EnvCacheSendCodeBodies       = "BIMWRIGHT_CACHE_SEND_CODE_BODIES";
         public const string EnvEnableToast               = "BIMWRIGHT_ENABLE_TOAST";
-        public const string EnvUiLanguage                = "BIMWRIGHT_UI_LANGUAGE";
         public const string EnvEnableSendCode = "BIMWRIGHT_ENABLE_SEND_CODE";
         public const string EnvEnableCallLog = "BIMWRIGHT_ENABLE_CALL_LOG";
         public const string EnvEnableResponseGuard = "BIMWRIGHT_ENABLE_RESPONSE_GUARD";
@@ -34,7 +30,6 @@ namespace RvtMcp.Plugin
         public const string EnvMaxResponseBytes = "BIMWRIGHT_MAX_RESPONSE_BYTES";
         public const string EnvSpillRetentionHours = "BIMWRIGHT_SPILL_RETENTION_HOURS";
 
-        public const bool DefaultReadOnly                  = false;
         public const bool DefaultAllowLanBind              = false;
         public const bool DefaultCacheSendCodeBodies       = false;
         public const bool DefaultEnableToast               = true;
@@ -44,18 +39,6 @@ namespace RvtMcp.Plugin
 
         [JsonProperty("target")]
         public string Target { get; set; }
-
-        [JsonProperty("toolsets")]
-        public List<string> Toolsets { get; set; }
-
-        /// <summary>Per-tool allowlist (with or without the <c>revit_</c> prefix). When set, only these tools are
-        /// registered; with no <see cref="Toolsets"/> it implies every toolset, so a listed tool is never hidden by
-        /// toolset defaults. Read-only and send-code switches still apply on top.</summary>
-        [JsonProperty("tools")]
-        public List<string> Tools { get; set; }
-
-        [JsonProperty("readOnly")]
-        public bool? ReadOnly { get; set; }
 
         [JsonProperty("enableSendCode")]
         public bool? EnableSendCode { get; set; }
@@ -99,13 +82,6 @@ namespace RvtMcp.Plugin
         public int? ToastIdleSeconds { get; set; }
 
         /// <summary>
-        /// Plugin UI language override: "auto" or a shipped locale code (en, ja, …).
-        /// Read by the plugin only; the server ignores it.
-        /// </summary>
-        [JsonProperty("uiLanguage")]
-        public string UiLanguage { get; set; }
-
-        /// <summary>
         /// Add-in live entries (<c>&lt;namespace&gt;.&lt;Class&gt;.&lt;Method&gt;</c>) send_code binds snippets through.
         /// Written by a repo's tooling (spex revit.ps1), so it may change while Revit is open - read it with
         /// <see cref="LiveEntriesFromFile"/> on every call, not from the startup snapshot.
@@ -120,8 +96,7 @@ namespace RvtMcp.Plugin
             return config?.LiveEntries ?? new List<string>();
         }
 
-        public bool ReadOnlyOrDefault              => ReadOnly           ?? DefaultReadOnly;
-        public bool EnableSendCodeOrDefault => !ReadOnlyOrDefault && (EnableSendCode ?? true);
+        public bool EnableSendCodeOrDefault => EnableSendCode ?? true;
         public bool EnableCallLogOrDefault => EnableCallLog ?? false;
         public bool EnableResponseGuardOrDefault => EnableResponseGuard ?? true;
         public int ResponseWarnBytesOrDefault => PositiveBytes(ResponseWarnBytes, 64 * 1024, "responseWarnBytes");
@@ -169,7 +144,6 @@ namespace RvtMcp.Plugin
         {
             return new RvtMcpConfig
             {
-                ReadOnly = ReadOnlyOrDefault,
                 EnableSendCode = EnableSendCodeOrDefault,
                 EnableCallLog = EnableCallLogOrDefault,
                 EnableResponseGuard = EnableResponseGuardOrDefault,
@@ -186,7 +160,6 @@ namespace RvtMcp.Plugin
             if (runtime == null) return this;
             var result = (RvtMcpConfig)MemberwiseClone();
             // A client may tighten host policy, never relax it.
-            result.ReadOnly = ReadOnlyOrDefault || runtime.ReadOnlyOrDefault;
             result.EnableSendCode = EnableSendCodeOrDefault && runtime.EnableSendCodeOrDefault;
             result.EnableCallLog = runtime.EnableCallLog ?? EnableCallLog;
             result.EnableResponseGuard = runtime.EnableResponseGuard ?? EnableResponseGuard;
@@ -305,15 +278,6 @@ namespace RvtMcp.Plugin
             var target = lookup(EnvTarget);
             if (!string.IsNullOrWhiteSpace(target)) config.Target = target.Trim();
 
-            var toolsets = lookup(EnvToolsets);
-            if (!string.IsNullOrWhiteSpace(toolsets)) config.Toolsets = ParseCsv(toolsets);
-
-            var tools = lookup(EnvTools);
-            if (!string.IsNullOrWhiteSpace(tools)) config.Tools = ParseCsv(tools);
-
-            var readOnly = ParseBool(lookup(EnvReadOnly));
-            if (readOnly.HasValue) config.ReadOnly = readOnly;
-
             config.EnableSendCode = ParseBool(lookup(EnvEnableSendCode)) ?? config.EnableSendCode;
             config.EnableCallLog = ParseBool(lookup(EnvEnableCallLog)) ?? config.EnableCallLog;
             config.EnableResponseGuard = ParseBool(lookup(EnvEnableResponseGuard)) ?? config.EnableResponseGuard;
@@ -332,10 +296,6 @@ namespace RvtMcp.Plugin
             var enableToast = ParseBool(lookup(EnvEnableToast));
             if (enableToast.HasValue) config.EnableToast = enableToast;
 
-            // BIMWRIGHT_UI_LANGUAGE is a Revit.exe process env var (Windows user/machine);
-            // the env block in MCP client configs reaches the server, not the plugin.
-            var uiLanguage = lookup(EnvUiLanguage);
-            if (!string.IsNullOrWhiteSpace(uiLanguage)) config.UiLanguage = uiLanguage.Trim();
 
         }
 
@@ -354,15 +314,6 @@ namespace RvtMcp.Plugin
                 {
                     case "--target":
                         if (i + 1 < args.Length) config.Target = args[++i];
-                        break;
-                    case "--toolsets":
-                        if (i + 1 < args.Length) config.Toolsets = ParseCsv(args[++i]);
-                        break;
-                    case "--tools":
-                        if (i + 1 < args.Length) config.Tools = ParseCsv(args[++i]);
-                        break;
-                    case "--read-only":
-                        config.ReadOnly = true;
                         break;
                     case "--enable-send-code": config.EnableSendCode = true; break;
                     case "--disable-send-code": config.EnableSendCode = false; break;
@@ -451,32 +402,6 @@ namespace RvtMcp.Plugin
             return result;
         }
 
-        /// <summary>Persisted settings that can be staged by the Settings dialog.</summary>
-        public sealed class SettingsPatch
-        {
-            public int? ToastIdleSeconds { get; set; }
-            public bool? CacheSendCodeBodies { get; set; }
-        }
-
-        public sealed class ApplyFailure
-        {
-            public ApplyFailure(string key, string error)
-            {
-                Key = key;
-                Error = error;
-            }
-
-            public string Key { get; }
-            public string Error { get; }
-        }
-
-        /// <summary>Per-key result returned by <see cref="TryApplySettings"/>.</summary>
-        public sealed class ApplyResult
-        {
-            public IList<string> Applied { get; } = new List<string>();
-            public IList<ApplyFailure> Failed { get; } = new List<ApplyFailure>();
-        }
-
         /// <summary>
         /// Persist only <c>enableToast</c> into the JSON config file, preserving other keys.
         /// The void wrapper remains for old ribbon callers; new callers should inspect the
@@ -491,77 +416,6 @@ namespace RvtMcp.Plugin
         public static bool TrySaveEnableToast(bool enabled, out string error, string configFilePath = null)
         {
             return TryUpdateConfig(configFilePath, root => root["enableToast"] = enabled, out error);
-        }
-
-        public static bool TrySaveToastIdleSeconds(int seconds, out string error, string configFilePath = null)
-        {
-            var normalized = NormalizeToastIdleSeconds(seconds);
-            return TryUpdateConfig(configFilePath, root => root["toastIdleSeconds"] = normalized, out error);
-        }
-
-        /// <summary>
-        /// Persist only <c>uiLanguage</c>. The legacy void wrapper is retained for the
-        /// ribbon's best-effort behavior; Settings can surface the returned error.
-        /// </summary>
-        public static void SaveUiLanguage(string code, string configFilePath = null)
-        {
-            string ignoredError;
-            TrySaveUiLanguage(code, out ignoredError, configFilePath);
-        }
-
-        public static bool TrySaveUiLanguage(string code, out string error, string configFilePath = null)
-        {
-            return TryUpdateConfig(configFilePath, root => root["uiLanguage"] = code, out error);
-        }
-
-        /// <summary>
-        /// Apply the Settings dialog's staged values one key at a time. Each operation
-        /// rereads the file immediately before writing, so an external edit made while
-        /// the dialog was open is merged and the staged key wins. A failed key does not
-        /// roll back a key that already succeeded.
-        /// </summary>
-        public static ApplyResult TryApplySettings(SettingsPatch patch, string configFilePath = null)
-        {
-            var result = new ApplyResult();
-            if (patch == null)
-            {
-                result.Failed.Add(new ApplyFailure("settings", "Settings patch is required."));
-                return result;
-            }
-
-            var toastIdleApplied = false;
-            if (patch.ToastIdleSeconds.HasValue)
-            {
-                string error;
-                if (TrySaveToastIdleSeconds(patch.ToastIdleSeconds.Value, out error, configFilePath))
-                {
-                    result.Applied.Add("toastIdleSeconds");
-                    toastIdleApplied = true;
-                }
-                else
-                {
-                    result.Failed.Add(new ApplyFailure("toastIdleSeconds", error));
-                }
-            }
-
-            if (patch.CacheSendCodeBodies.HasValue)
-            {
-                string error;
-                var ok = TryUpdateConfig(configFilePath, root =>
-                {
-                    // If another process edits the file between the per-key writes,
-                    // restage the first key so every staged value still wins.
-                    if (toastIdleApplied)
-                        root["toastIdleSeconds"] = NormalizeToastIdleSeconds(patch.ToastIdleSeconds);
-
-                    root["cacheSendCodeBodies"] = patch.CacheSendCodeBodies.Value;
-                }, out error);
-
-                if (ok) result.Applied.Add("cacheSendCodeBodies");
-                else result.Failed.Add(new ApplyFailure("cacheSendCodeBodies", error));
-            }
-
-            return result;
         }
 
         /// <summary>

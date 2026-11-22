@@ -18,9 +18,8 @@ namespace RvtMcp.Tests
         [Fact]
         public void Server_defaults_cannot_relax_plugin_policy()
         {
-            var resolved = new RvtMcpConfig { ReadOnly = true, EnableSendCode = false }
+            var resolved = new RvtMcpConfig { EnableSendCode = false }
                 .WithRuntimeOptions(new RvtMcpConfig().ToRuntimeOptions());
-            Assert.True(resolved.ReadOnlyOrDefault);
             Assert.False(resolved.EnableSendCodeOrDefault);
         }
 

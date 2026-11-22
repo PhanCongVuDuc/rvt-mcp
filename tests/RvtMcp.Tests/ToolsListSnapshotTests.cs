@@ -16,18 +16,11 @@ namespace RvtMcp.Tests
             Path.GetDirectoryName(typeof(ToolsListSnapshotTests).Assembly.Location)!,
             "..", "..", "..", "Golden", "tools-list.json");
 
-        private static readonly string AdaptiveGoldenPath = Path.Combine(
-            Path.GetDirectoryName(typeof(ToolsListSnapshotTests).Assembly.Location)!,
-            "..", "..", "..", "Golden", "tools-list-adaptive-bake.json");
-
-        private static readonly string StructuralGoldenPath = Path.Combine(
-            Path.GetDirectoryName(typeof(ToolsListSnapshotTests).Assembly.Location)!,
-            "..", "..", "..", "Golden", "tools-list-structural.json");
 
         [Fact]
         public void Tools_list_matches_golden_snapshot()
         {
-            var captured = CaptureToolsList(AllToolsetsConfig(enableAdaptiveBake: false));
+            var captured = CaptureToolsList(new RvtMcpConfig());
 
             SnapshotSerializer.VerifyGolden(GoldenPath, captured, "ToolsListSnapshot");
         }
@@ -35,7 +28,7 @@ namespace RvtMcp.Tests
         [Fact]
         public void Default_tools_snapshot_does_not_expose_adaptive_bake_suggestions()
         {
-            var captured = CaptureToolsList(AllToolsetsConfig(enableAdaptiveBake: false));
+            var captured = CaptureToolsList(new RvtMcpConfig());
 
             Assert.DoesNotContain("\"name\": \"revit_list_bake_suggestions\"", captured);
             Assert.DoesNotContain("\"name\": \"revit_accept_bake_suggestion\"", captured);
@@ -43,9 +36,9 @@ namespace RvtMcp.Tests
         }
 
         [Fact]
-        public void Read_only_defaults_hide_send_code()
+        public void Disabled_send_code_is_hidden()
         {
-            var captured = CaptureToolsList(new RvtMcpConfig { ReadOnly = true });
+            var captured = CaptureToolsList(new RvtMcpConfig { EnableSendCode = false });
             Assert.DoesNotContain("\"name\": \"revit_send_code_to_revit\"", captured);
             Assert.Contains("\"name\": \"revit_list_available_targets\"", captured);
         }
@@ -53,7 +46,7 @@ namespace RvtMcp.Tests
         [Fact]
         public void Server_instructions_stay_under_2048_utf8_bytes()
         {
-            var programType = typeof(RvtMcp.Server.ToolsetFilter).Assembly.GetType("RvtMcp.Server.Program")!;
+            var programType = typeof(RvtMcp.Server.MetaTools).Assembly.GetType("RvtMcp.Server.Program")!;
             var field = programType.GetField("ServerInstructionsText",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
             Assert.NotNull(field);
@@ -65,39 +58,21 @@ namespace RvtMcp.Tests
         [Fact]
         public void Generated_tools_snapshot_does_not_include_removed_bake_tool()
         {
-            var captured = CaptureToolsList(AllToolsetsConfig(enableAdaptiveBake: false));
+            var captured = CaptureToolsList(new RvtMcpConfig());
 
             Assert.DoesNotContain("\"name\": \"revit_bake_tool\"", captured);
         }
 
         private static string CaptureToolsList(RvtMcpConfig config)
         {
-            // ToolsetFilter is a public type in Server — gives a stable handle to the
-            // Server assembly without forcing `Program` to become public.
-            var serverAssembly = typeof(RvtMcp.Server.ToolsetFilter).Assembly;
-            var programType = serverAssembly.GetType("RvtMcp.Server.Program")!;
-            var resolveToolTypes = programType.GetMethod("ResolveRegisteredToolTypes", BindingFlags.NonPublic | BindingFlags.Static)!;
-            var enabled = RvtMcp.Server.ToolsetFilter.Resolve(config);
-
-            var toolClasses = ((Type[])resolveToolTypes.Invoke(null, new object[] { enabled, config })!)
+            var tools = RvtMcp.Server.Program.ResolveRegisteredToolTypes(config)
                 .OrderBy(t => t.Name, StringComparer.Ordinal)
-                .ToArray();
-
-            var tools = toolClasses
                 .SelectMany(cls => cls.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
-                    .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() != null)
-                    .Where(m => !config.ReadOnlyOrDefault || m.GetCustomAttribute<McpServerToolAttribute>()!.ReadOnly))
+                    .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() != null))
                 .Select(ToToolMetadata)
                 .ToArray();
 
             return SnapshotSerializer.Serialize(tools.Length, tools);
-        }
-
-        private static RvtMcpConfig AllToolsetsConfig(bool enableAdaptiveBake)
-        {
-            return new RvtMcpConfig
-            { Toolsets = new System.Collections.Generic.List<string> { "all" }
-            };
         }
 
         private static object ToToolMetadata(MethodInfo method)

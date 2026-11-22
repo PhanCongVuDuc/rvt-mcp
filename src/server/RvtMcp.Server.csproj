@@ -53,7 +53,6 @@
     <Compile Include="..\shared\Views\Toast\ToolActivityClassifier.cs" Link="Shared\ToolActivityClassifier.cs" />
     <Compile Include="..\shared\Security\McpResponsePrivacy.cs" Link="Shared\McpResponsePrivacy.cs" />
     <Compile Include="..\shared\Security\ErrorSanitizer.cs" Link="Shared\ErrorSanitizer.cs" />
-    <Compile Include="..\shared\ToolCatalog\ToolCatalogModels.cs" Link="Shared\ToolCatalogModels.cs" />
   </ItemGroup>
 
   <!-- Prompt bodies (D1): embedded markdown, stable LogicalName like the localization catalogs -->

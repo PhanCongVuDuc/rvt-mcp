@@ -119,10 +119,12 @@ namespace RvtMcp.Server
             catch { }
         }
 
-        internal static bool ShouldSendToolCatalog(RvtMcp.ToolCatalog.ToolCatalog catalog, IReadOnlyList<string> capabilities)
+        // "tool_catalog" is what add-ins built before the catalog was removed advertise; they answer the handshake too.
+        internal static bool ShouldHandshake(IReadOnlyList<string> capabilities)
         {
-            return catalog != null && capabilities != null
-                && capabilities.Any(value => string.Equals(value, "tool_catalog", StringComparison.OrdinalIgnoreCase));
+            return capabilities != null && capabilities.Any(value =>
+                string.Equals(value, "handshake", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "tool_catalog", StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -292,7 +294,7 @@ namespace RvtMcp.Server
                 if (conn == null)
                     throw new TargetException(binding.ReportConnectFailure(effectiveGeneration, failure, live));
 
-                if (!ShouldSendToolCatalog(ServerState.ToolCatalog, descriptor.Capabilities))
+                if (!ShouldHandshake(descriptor.Capabilities))
                     return conn; // no handshake to send — socket connect counts as success
 
                 switch (Handshake(conn))
@@ -424,29 +426,36 @@ namespace RvtMcp.Server
         }
 
         /// <summary>
-        /// Catalog handshake (§6.4): set_tool_catalog must round-trip within 5 s before
+        /// Handshake (§6.4): an authenticated "handshake" must round-trip within 5 s before
         /// any real command is sent. A timeout is the only Busy outcome; a connection
         /// that dies or fails mid-handshake is Closed → Unavailable.
         /// </summary>
         private static HandshakeResult Handshake(Conn conn)
         {
-            var id = $"catalog-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid().ToString("N").Substring(0, 6)}";
+            var id = $"handshake-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid().ToString("N").Substring(0, 6)}";
             var request = new JObject
             {
                 ["id"] = id,
-                ["command"] = "set_tool_catalog",
-                ["params"] = JObject.FromObject(ServerState.ToolCatalog),
+                ["command"] = "handshake",
+                ["params"] = new JObject(),
                 ["token"] = conn.Token
             };
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             _pending[id] = new PendingRequest { Tcs = tcs, Epoch = conn.Epoch };
+            // The read loop starts with the connection: a peer that closes at once can reach EOF and fail pending
+            // requests before this one is registered. FailPending sets Closed before it scans, so this check closes the gap.
+            if (Volatile.Read(ref conn.Closed) != 0)
+            {
+                _pending.TryRemove(id, out _);
+                return HandshakeResult.Closed;
+            }
             try
             {
                 conn.Writer.WriteLine(request.ToString(Formatting.None));
                 if (!tcs.Task.Wait(TimeSpan.FromMilliseconds(4500)))
                 {
                     _pending.TryRemove(id, out _);
-                    Console.Error.WriteLine("[RvtMcp] Tool catalog handshake timed out (4.5s) — treating target as busy.");
+                    Console.Error.WriteLine("[RvtMcp] Handshake timed out (4.5s) — treating target as busy.");
                     return HandshakeResult.TimedOut;
                 }
 
@@ -455,7 +464,7 @@ namespace RvtMcp.Server
                 var error = response.Value<string>("error") ?? "";
                 if (error.IndexOf("Unauthorized", StringComparison.OrdinalIgnoreCase) >= 0)
                     return HandshakeResult.TokenRejected;
-                Console.Error.WriteLine($"[RvtMcp] Tool catalog rejected: {error}");
+                Console.Error.WriteLine($"[RvtMcp] Handshake rejected: {error}");
                 return HandshakeResult.AnsweredRejected;
             }
             catch (Exception ex)
@@ -463,7 +472,7 @@ namespace RvtMcp.Server
                 _pending.TryRemove(id, out _);
                 // A faulted tcs.Task reaches Wait() wrapped in AggregateException, so a
                 // mid-handshake ConnectionInterruptedException lands here too — both mean Closed.
-                Console.Error.WriteLine($"[RvtMcp] Tool catalog handshake failed: {ex.Message}");
+                Console.Error.WriteLine($"[RvtMcp] Handshake failed: {ex.Message}");
                 return HandshakeResult.Closed; // e.g. write failed on a closing stream → unavailable
             }
         }

@@ -23,7 +23,6 @@ namespace RvtMcp.Server
         public string Command { get; set; }
         public JObject Args { get; set; } = new JObject();
         public string Target { get; set; }
-        public bool ReadOnly { get; set; }
         public int? TimeoutSeconds { get; set; }
     }
 
@@ -37,7 +36,7 @@ namespace RvtMcp.Server
     {
         public const int UsageExitCode = 2;
         public const string Usage =
-            "usage: rvt-mcp addin list [--target <selector>] | rvt-mcp addin call <addin> <command> [--args <json>] [--target <selector>] [--read-only] [--timeout <seconds>]";
+            "usage: rvt-mcp addin list [--target <selector>] | rvt-mcp addin call <addin> <command> [--args <json>] [--target <selector>] [--timeout <seconds>]";
 
         public static async Task<int> RunAsync(string[] args, TextWriter stdout, TextWriter stderr)
         {
@@ -71,7 +70,7 @@ namespace RvtMcp.Server
             }
 
             RevitTargetBinding.Initialize(selector);
-            ServerState.Config = new RvtMcpConfig { ReadOnly = request.ReadOnly };
+            ServerState.Config = new RvtMcpConfig();
             var context = TargetCallContext.Begin();
             try
             {
@@ -82,18 +81,9 @@ namespace RvtMcp.Server
                     return 0;
                 }
 
-                if (request.ReadOnly)
-                {
-                    var refusal = await AddinMetaTools.ReadOnlyRefusal(request.Addin, request.Command);
-                    if (refusal != null)
-                    {
-                        stderr.WriteLine("rvt-mcp addin: " + refusal.Substring("Error: ".Length));
-                        return 1;
-                    }
-                }
 
                 var envelope = await ToolGateway.SendToRevit("call_addin_command",
-                    new { addin = request.Addin, command = request.Command, args = request.Args, entry = "cli", read_only = request.ReadOnly },
+                    new { addin = request.Addin, command = request.Command, args = request.Args, entry = "cli" },
                     request.TimeoutSeconds);
                 stdout.WriteLine(JsonConvert.SerializeObject(envelope, Formatting.Indented));
                 var exit = ExitCodeFor(envelope);
@@ -113,7 +103,7 @@ namespace RvtMcp.Server
             }
             catch (Exception ex)
             {
-                // A refusal of rvt-mcp (addin_not_loaded, read_only_blocked, addin_protocol_mismatch...) or a timeout.
+                // A refusal of rvt-mcp (addin_not_loaded, addin_protocol_mismatch...) or a timeout.
                 stderr.WriteLine("rvt-mcp addin: " + ex.Message);
                 return 1;
             }
@@ -163,9 +153,6 @@ namespace RvtMcp.Server
                             request.Args = parsed;
                         }
                         catch (JsonException ex) { error = "--args is not valid JSON: " + ex.Message; return false; }
-                        break;
-                    case "--read-only":
-                        request.ReadOnly = true;
                         break;
                     case "--timeout":
                         if (!int.TryParse(Value(), out var seconds) || seconds < 1) { error = "--timeout needs a number of seconds."; return false; }

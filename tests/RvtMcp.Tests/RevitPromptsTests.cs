@@ -27,7 +27,6 @@ namespace RvtMcp.Tests
 
             Assert.Contains("revit_send_code_to_revit", rendered);
             Assert.Contains("confirm", rendered, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("--toolsets", rendered);
         }
 
         [Fact]
@@ -52,32 +51,5 @@ namespace RvtMcp.Tests
             Assert.Contains("Get my confirmation before writing anything", rendered);
         }
 
-        [Fact]
-        public void Stairs_returns_sendcode_notice_under_read_only()
-        {
-            ServerState.Config = new RvtMcpConfig { ReadOnly = true };
-
-            var rendered = RevitPrompts.Stairs();
-
-            Assert.Contains("--read-only", rendered);
-            Assert.DoesNotContain("resolved design", rendered);
-        }
-
-        [Fact]
-        public void Stairs_returns_enable_notice_when_meta_off_even_with_toolbaker()
-        {
-            // send_code stays available via the toolbaker set, but the body's step-0
-            // revit_get_current_target lives in meta — the prompt must gate on it.
-            ServerState.Config = new RvtMcpConfig
-            {
-                Toolsets = new List<string> { "toolbaker" }
-            };
-
-            var rendered = RevitPrompts.Stairs();
-
-            Assert.Contains("meta", rendered);
-            Assert.Contains("--toolsets", rendered);
-            Assert.DoesNotContain("resolved design", rendered);
-        }
     }
 }

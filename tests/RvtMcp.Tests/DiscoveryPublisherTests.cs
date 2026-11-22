@@ -96,7 +96,7 @@ namespace RvtMcp.Tests
                 ["transport"] = "pipe",
                 ["pipe_name"] = "p" + pid,
                 ["auth_token"] = token,
-                ["capabilities"] = new JArray("tool_catalog")
+                ["capabilities"] = new JArray("handshake")
             }.ToString();
             File.WriteAllText(Path.Combine(_dir, "revit-2027-" + pid + ".json"), json);
         }
@@ -236,7 +236,7 @@ namespace RvtMcp.Tests
                     ["pid"] = pid, ["process_start_utc"] = _start.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                     ["target_id"] = "revit-2027-" + pid, ["transport"] = "pipe",
                     ["pipe_name"] = "p" + pid, ["auth_token"] = "tok" + pid,
-                    ["capabilities"] = new JArray("tool_catalog")
+                    ["capabilities"] = new JArray("handshake")
                 }.ToString());
             }
             pub2.Dispose();

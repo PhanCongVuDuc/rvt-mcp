@@ -90,33 +90,6 @@ namespace RvtMcp.Tests.Addins
             Assert.Equal("boom", answer.Value<string>("error"));
         }
 
-        [Fact]
-        public async Task Read_only_still_blocks_a_command_that_changes_the_model()
-        {
-            var called = false;
-            Register(request =>
-            {
-                var command = JObject.Parse(request).Value<string>("command");
-                if (command == "_catalog") return Catalog;
-                called = true;
-                return @"{""ok"":true,""result"":{}}";
-            });
-            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            AddinCommandRoute.TryRun("call_addin_command", tcs, () =>
-            {
-                var outcome = AddinCommandRegistry.Call(@"{""addin"":""Sonny.Revit"",""command"":""walls.delete"",""read_only"":true}");
-                return outcome.Success ? outcome.Data.ToString() : outcome.Error;
-            });
-
-            var error = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.StartsWith("read_only_blocked", error);
-            Assert.False(called);
-            // The policy the off-queue path checks first keeps both add-in tools callable in a read-only session.
-            Assert.Null(ToolReadPolicy.Rejection("call_addin_command", true, false));
-            Assert.Null(ToolReadPolicy.Rejection("list_addin_commands", true, false));
-        }
-
         // Every year's plugin takes the add-in tools off the queue before it enqueues a request for the ExternalEvent (FR-046).
         [Theory]
         [InlineData("plugin-r22")]

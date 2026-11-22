@@ -18,7 +18,7 @@
 
 A fork of [bimwright/rvt-mcp](https://github.com/bimwright/rvt-mcp) cut down to what this machine actually uses. A .NET 8 server talks MCP over stdio; a thin add-in per Revit year (2022–2027) runs inside Revit and is reached over localhost TCP (≤2024) or a named pipe (≥2025). Nothing leaves the machine. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Removed from upstream: the other 224 tools (typed query, create, modify, MEP, structural, schedules, families, annotation, graphics, rooms, links, parameters, organization, workflows, lint), ToolBaker and adaptive bake, per-model change history and the change-impact survey, the send_code body journal, the in-Revit WPF toast, HTTP/SSE transport, the daily update check, SQLite spill output and five prompts. Anything those tools did is done through `revit_send_code_to_revit` or through an add-in command.
+Removed from upstream: the other 224 tools (typed query, create, modify, MEP, structural, schedules, families, annotation, graphics, rooms, links, parameters, organization, workflows, lint), ToolBaker and adaptive bake, per-model change history and the change-impact survey, the send_code body journal, the in-Revit WPF toast, HTTP/SSE transport, the daily update check, SQLite spill output, five prompts, toolsets / `--tools` / read-only mode, the Settings window and the 14 non-English UI languages (the add-in UI is English). Anything those tools did is done through `revit_send_code_to_revit` or through an add-in command.
 
 ---
 
@@ -38,17 +38,16 @@ The add-in is built and deployed with `dotnet build src/RvtMcp.sln -c Debug` in 
 
 ## Tools
 
-| Toolset | Tools |
-|---------|-------|
-| `meta` | `revit_send_code_to_revit`, `revit_open_model`, `revit_list_recent_models`, `revit_list_available_targets`, `revit_get_current_target`, `revit_switch_target`, `revit_list_addin_commands`, `revit_call_addin_command` |
-| `query` | `revit_get_current_view_info` |
-| `view` | `revit_capture_view_image`, `revit_activate_view` |
-| `export` | `revit_export_pdf`, `revit_export_image` |
-| `sheets` | `revit_list_sheets` |
+| Area | Tools |
+|------|-------|
+| Code and add-ins | `revit_send_code_to_revit`, `revit_list_addin_commands`, `revit_call_addin_command` |
+| Models and targets | `revit_open_model`, `revit_list_recent_models`, `revit_list_available_targets`, `revit_get_current_target`, `revit_switch_target` |
+| Views and sheets | `revit_get_current_view_info`, `revit_capture_view_image`, `revit_activate_view`, `revit_list_sheets` |
+| Export | `revit_export_pdf`, `revit_export_image` |
 
-All five toolsets are on by default. `--tools <csv>` narrows the list further.
+Every tool is always registered; `--disable-send-code` is the only switch that hides one.
 
-- **`revit_send_code_to_revit`** compiles and runs a C# body inside Revit; `--read-only` or `--disable-send-code` removes it. See [docs/send-code.md](docs/send-code.md).
+- **`revit_send_code_to_revit`** compiles and runs a C# body inside Revit; `--disable-send-code` removes it. See [docs/send-code.md](docs/send-code.md).
 - **Add-in commands:** `revit_list_addin_commands` / `revit_call_addin_command` run commands other add-ins register in the same Revit process. See [docs/addin-commands.md](docs/addin-commands.md).
 - **Prompt:** `revit_stairs` — guided stair creation through `send_code` ([docs/stairs-workflow.md](docs/stairs-workflow.md)).
 
@@ -65,9 +64,6 @@ Precedence, high wins: **CLI → env (`BIMWRIGHT_*`) →** `%LOCALAPPDATA%\Bimwr
 | Setting | CLI | Env | JSON |
 |---------|-----|-----|------|
 | Target selector | `--target 2024` / `--target pid:12345` | `BIMWRIGHT_TARGET` | `target` |
-| Toolsets | `--toolsets query,meta` | `BIMWRIGHT_TOOLSETS` | `toolsets` |
-| Tool allowlist | `--tools send_code_to_revit,switch_target` | `BIMWRIGHT_TOOLS` | `tools` |
-| Read-only | `--read-only` | `BIMWRIGHT_READ_ONLY=1` | `readOnly` |
 | send_code | `--enable-send-code` / `--disable-send-code` | `BIMWRIGHT_ENABLE_SEND_CODE` | `enableSendCode` |
 | Call log | `--enable-call-log` / `--disable-call-log` | `BIMWRIGHT_ENABLE_CALL_LOG` | `enableCallLog` |
 | Keep send_code bodies in History (re-run) | `--cache-send-code-bodies` / `--no-cache-send-code-bodies` | `BIMWRIGHT_CACHE_SEND_CODE_BODIES=1` | `cacheSendCodeBodies` |
@@ -76,8 +72,7 @@ Precedence, high wins: **CLI → env (`BIMWRIGHT_*`) →** `%LOCALAPPDATA%\Bimwr
 | Spill retention (default 36 h) | `--spill-retention-hours <n>` | `BIMWRIGHT_SPILL_RETENTION_HOURS` | `spillRetentionHours` |
 | LAN bind (plugin) | — | `BIMWRIGHT_ALLOW_LAN_BIND=1` | `allowLanBind` |
 | Notifications (default on) | ribbon **Toast** | `BIMWRIGHT_ENABLE_TOAST=0` | `enableToast` |
-| Notification idle (default 20 s) | Settings → Toast | — | `toastIdleSeconds` |
-| UI language (add-in) | ribbon **Language** | `BIMWRIGHT_UI_LANGUAGE` | `uiLanguage` |
+| Notification idle (10/20/30/60 s, default 20) | — | — | `toastIdleSeconds` |
 
 After changing server flags, restart the MCP connection so the client picks up the new tool list.
 
@@ -160,7 +155,7 @@ Every target error code except `TARGET_INTERRUPTED` means the command was **not*
 
 - Local only: loopback TCP or a local named pipe, with a per-session auth token in the discovery files under `%LOCALAPPDATA%\Bimwright\rvt-mcp\`.
 - Tool arguments are schema-checked before handlers run; errors returned to the model are sanitized.
-- `send_code` runs arbitrary C# in the Revit process. Use `--read-only` or `--disable-send-code` if that is unacceptable.
+- `send_code` runs arbitrary C# in the Revit process. Use `--disable-send-code` if that is unacceptable.
 - send_code bodies are kept in History only when `cacheSendCodeBodies` is on; otherwise logs hold a hash and length.
 
 More: [SECURITY.md](SECURITY.md).
@@ -175,7 +170,6 @@ More: [SECURITY.md](SECURITY.md).
 | [docs/send-code.md](docs/send-code.md) | send_code source forms and failure handling |
 | [docs/addin-commands.md](docs/addin-commands.md) | Commands other add-ins register |
 | [docs/stairs-workflow.md](docs/stairs-workflow.md) | The `revit_stairs` prompt |
-| [docs/localization.md](docs/localization.md) | UI languages, overrides, hot reload |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Build, test |
 
 ---

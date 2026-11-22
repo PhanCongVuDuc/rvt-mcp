@@ -19,7 +19,7 @@ namespace RvtMcp.Tests.Addins
         public void Call_parses_addin_command_args_target_read_only_and_timeout()
         {
             Assert.True(AddinCli.TryParse(
-                new[] { "call", "Sonny.Revit", "walls.count", "--args", "{\"level\":\"Tầng 1\"}", "--target", "pid:123", "--read-only", "--timeout", "30" },
+                new[] { "call", "Sonny.Revit", "walls.count", "--args", "{\"level\":\"Tầng 1\"}", "--target", "pid:123", "--timeout", "30" },
                 out var request, out var error), error);
 
             Assert.Equal(AddinCliVerb.Call, request.Verb);
@@ -27,7 +27,6 @@ namespace RvtMcp.Tests.Addins
             Assert.Equal("walls.count", request.Command);
             Assert.Equal("Tầng 1", request.Args.Value<string>("level"));
             Assert.Equal("pid:123", request.Target);
-            Assert.True(request.ReadOnly);
             Assert.Equal(30, request.TimeoutSeconds);
         }
 

@@ -54,7 +54,7 @@ namespace RvtMcp.Tests
                 Transport = "tcp",
                 Port = 49301,
                 AuthToken = "tok",
-                Capabilities = new[] { "tool_catalog" },
+                Capabilities = new[] { "handshake" },
                 Source = DescriptorSource.PerInstance,
                 FileName = $"revit-{year}-{pid}.json",
             };

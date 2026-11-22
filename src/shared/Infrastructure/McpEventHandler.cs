@@ -53,7 +53,7 @@ namespace RvtMcp.Plugin
                 try
                 {
                     runtimeConfig = RvtMcpConfig.LoadReadOnly().WithRuntimeOptions(request.RuntimeOptions);
-                    var rejection = ToolReadPolicy.Rejection(request.CommandName, runtimeConfig.ReadOnlyOrDefault, runtimeConfig.EnableSendCodeOrDefault);
+                    var rejection = ToolReadPolicy.Rejection(request.CommandName, runtimeConfig.EnableSendCodeOrDefault);
                     if (rejection != null) throw new InvalidOperationException(rejection);
                     var command = _dispatcher.GetCommand(request.CommandName);
                     if (command == null)
@@ -257,7 +257,7 @@ namespace RvtMcp.Plugin
             try
             {
                 runtimeConfig = RvtMcpConfig.LoadReadOnly().WithRuntimeOptions(request.RuntimeOptions);
-                var rejection = ToolReadPolicy.Rejection(request.CommandName, runtimeConfig.ReadOnlyOrDefault, runtimeConfig.EnableSendCodeOrDefault);
+                var rejection = ToolReadPolicy.Rejection(request.CommandName, runtimeConfig.EnableSendCodeOrDefault);
                 if (rejection != null) throw new InvalidOperationException(rejection);
                 var command = _dispatcher.GetCommand(request.CommandName);
                 if (command == null)

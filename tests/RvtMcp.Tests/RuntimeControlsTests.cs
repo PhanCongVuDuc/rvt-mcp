@@ -42,8 +42,8 @@ namespace RvtMcp.Tests
             Assert.False(config.EnableSendCodeOrDefault);
             Assert.False(config.EnableCallLogOrDefault);
             Assert.True(config.EnableResponseGuardOrDefault);
-            RvtMcpConfig.ApplyCliArgs(config, new[] { "--enable-send-code", "--enable-call-log", "--disable-response-guard", "--read-only" });
-            Assert.False(config.EnableSendCodeOrDefault);
+            RvtMcpConfig.ApplyCliArgs(config, new[] { "--enable-send-code", "--enable-call-log", "--disable-response-guard" });
+            Assert.True(config.EnableSendCodeOrDefault);
             Assert.True(config.EnableCallLogOrDefault);
             Assert.False(config.EnableResponseGuardOrDefault);
         }
@@ -59,15 +59,12 @@ namespace RvtMcp.Tests
         public void Runtime_options_override_plugin_settings_without_persisting_or_changing_body_retention()
         {
             var plugin = new RvtMcpConfig { EnableCallLog = true};
-            var server = new RvtMcpConfig { EnableCallLog = false, EnableSendCode = false, ReadOnly = true };
+            var server = new RvtMcpConfig { EnableCallLog = false, EnableSendCode = false};
             var wire = JObject.FromObject(server.ToRuntimeOptions()).ToObject<RvtMcpConfig>();
             var resolved = plugin.WithRuntimeOptions(wire);
             Assert.False(resolved.EnableCallLogOrDefault);
             Assert.False(resolved.EnableSendCodeOrDefault);
             Assert.True(plugin.EnableCallLogOrDefault);
-            Assert.Contains("READ_ONLY", ToolReadPolicy.Rejection("create_level", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
-            Assert.Null(ToolReadPolicy.Rejection("list_sheets", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
-            Assert.Contains("SEND_CODE_DISABLED", ToolReadPolicy.Rejection("send_code_to_revit", resolved.ReadOnlyOrDefault, resolved.EnableSendCodeOrDefault));
         }
 
         [Fact]
@@ -97,53 +94,6 @@ namespace RvtMcp.Tests
             Assert.Single(session.Journal.ReadDay(session.Journal.ListDates()[0]));
             session.RecordCall("send_code_to_revit", "{\"code\":\"return 123456789;\"}", true, 1);
             Assert.DoesNotContain("return 123456789", File.ReadAllText(Directory.GetFiles(Path.Combine(_root, "journal"))[0]));
-        }
-
-        [Fact]
-        public void All_tools_have_explicit_hints_except_send_code_and_read_only_registration_matches_them()
-        {
-            var full = new RvtMcpConfig { Toolsets = new List<string> { "all" } };
-            var methods = Program.ResolveRegisteredToolMethods(ToolsetFilter.Resolve(full), full).ToArray();
-            Assert.Equal(14, methods.Length);
-            foreach (var method in methods)
-            {
-                var attr = method.GetCustomAttribute<McpServerToolAttribute>();
-                var names = method.CustomAttributes.Single(a => a.AttributeType == typeof(McpServerToolAttribute))
-                    .NamedArguments.Select(a => a.MemberName).ToArray();
-                var tool = McpServerTool.Create(method, (object)null).ProtocolTool;
-                if (attr.Name == "revit_send_code_to_revit")
-                {
-                    Assert.Null(tool.Annotations);
-                    Assert.DoesNotContain("ReadOnly", names);
-                }
-                else
-                {
-                    foreach (var hint in new[] { "ReadOnly", "Destructive", "Idempotent", "OpenWorld" }) Assert.Contains(hint, names);
-                    Assert.NotNull(tool.Annotations);
-                    var protocol = JObject.Parse(System.Text.Json.JsonSerializer.Serialize(tool, ModelContextProtocol.McpJsonUtilities.DefaultOptions));
-                    foreach (var hint in new[] { "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint" })
-                        Assert.NotNull(protocol["annotations"]?[hint]);
-                    Assert.Equal(attr.ReadOnly ? ToolActivityKind.Read : ToolActivityKind.Write,
-                        ToolActivityClassifier.Classify(attr.Name.Substring(6)));
-                    Assert.False(attr.OpenWorld);
-                }
-            }
-            // revit_switch_target is ReadOnly=false but stays registered under --read-only
-            // so the agent can always recover the target binding (spec §6.8/§6.11).
-            // revit_call_addin_command too: it refuses an add-in command declared readOnly=false itself.
-            var expected = methods.Where(m => m.GetCustomAttribute<McpServerToolAttribute>().ReadOnly
-                    || m.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_switch_target"
-                    || m.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_call_addin_command")
-                .Select(m => m.GetCustomAttribute<McpServerToolAttribute>().Name).OrderBy(n => n).ToArray();
-            full.ReadOnly = true;
-            var actual = Program.ResolveRegisteredToolMethods(ToolsetFilter.Resolve(full), full)
-                .Select(m => m.GetCustomAttribute<McpServerToolAttribute>().Name).OrderBy(n => n).ToArray();
-            Assert.Equal(expected, actual);
-            Assert.Equal(expected.Where(n => n != "revit_switch_target" && n != "revit_call_addin_command").Select(n => n.Substring(6)).OrderBy(n => n),
-                ToolReadPolicy.ReadOnlyCommands.OrderBy(n => n));
-            Assert.Contains("revit_list_sheets", actual);
-            Assert.DoesNotContain("revit_capture_view_image", actual);
-            Assert.DoesNotContain("revit_export_room_data", actual);
         }
 
         [Theory]
@@ -192,9 +142,7 @@ namespace RvtMcp.Tests
             var before = ServerState.Config;
             try
             {
-                ServerState.Config = new RvtMcpConfig { ReadOnly = true };
-                Assert.Null(ServerState.BlockIfReadOnly("activate_view"));
-                Assert.Contains("read_only_mode", ServerState.BlockIfReadOnly("set_view_crop"));
+                ServerState.Config = new RvtMcpConfig { };
             }
             finally { ServerState.Config = before; }
         }

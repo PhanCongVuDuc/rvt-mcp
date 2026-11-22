@@ -16,7 +16,6 @@ using System.Threading.Tasks;
 using Bimwright.Targeting;
 using RvtMcp.Plugin; // RvtMcpConfig
 using RvtMcp.Server.Prompts;
-using RvtMcp.ToolCatalog;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -48,11 +47,6 @@ namespace RvtMcp.Server
             var config = RvtMcpConfig.Load(args);
             config.ValidateResponseLimits();
             ServerState.Config = config;
-            var unknownTools = UnknownAllowlistedTools(config);
-            if (unknownTools.Length > 0)
-                Console.Error.WriteLine("[RvtMcp] --tools names match no tool: " + string.Join(", ", unknownTools));
-            ServerState.ToolCatalog = ServerToolCatalogBuilder.Build(
-                ToolsetFilter.Resolve(config), config);
             if (!string.IsNullOrWhiteSpace(config.Target))
             {
                 if (!TryResolveTargetSelector(config.Target.Trim(), out var selector, out var targetError))
@@ -109,7 +103,6 @@ namespace RvtMcp.Server
 
         private static async Task RunStdio(RvtMcpConfig config)
         {
-            var enabled = ToolsetFilter.Resolve(config);
             var builder = Host.CreateApplicationBuilder();
             // stdio MCP stdout must contain JSON-RPC only. ClearProviders() removes default
             // host logging, but the MCP SDK (and any transitive package) may re-add a Console
@@ -121,7 +114,7 @@ namespace RvtMcp.Server
                 .AddMcpServer(ConfigureMcpServerOptions)
                 .WithStdioServerTransport();
             mcp = RuntimeToolFilter.Register(mcp, config, ToolGateway.Session);
-            mcp = RegisterToolsets(mcp, enabled, config);
+            mcp = RegisterTools(mcp, config);
             mcp.WithResources<RevitResources>();
             mcp.WithPrompts<RevitPrompts>();
             var app = builder.Build();
@@ -136,7 +129,7 @@ namespace RvtMcp.Server
                 "",
                 "Usage: rvt-mcp [options]",
                 "       rvt-mcp addin list [--target <selector>]",
-                "       rvt-mcp addin call <addin> <command> [--args <json>] [--target <selector>] [--read-only] [--timeout <seconds>]",
+                "       rvt-mcp addin call <addin> <command> [--args <json>] [--target <selector>] [--timeout <seconds>]",
                 "         Commands other add-ins registered in a running Revit (e.g. Sonny.Revit). JSON on stdout, one error line",
                 "         on stderr; exit 0 ok, 1 the command or rvt-mcp refused, 2 bad arguments or no Revit reachable.",
                 "         With several Revit sessions running, --target (year | pid:<n> | id:revit-<year>-<pid>) is required.",
@@ -148,17 +141,11 @@ namespace RvtMcp.Server
                 "                          Default: auto — ordered scan of revit-*.json files in",
                 "                          %LOCALAPPDATA%\\Bimwright\\rvt-mcp\\.",
                 "",
-                "Tool exposure (A3 Progressive Disclosure):",
-                "  --toolsets <csv>        Comma list of toolsets to enable. Default: " + string.Join(",", ToolsetFilter.DefaultOn) + ".",
-                "                          Known toolsets: " + string.Join(", ", ToolsetFilter.KnownToolsets),
-                "                          Use 'all' to expose every toolset.",
-                "  --tools <csv>           Expose only these tools (names with or without 'revit_'). Without",
-                "                          --toolsets every toolset is searched; --read-only still applies.",
-                "  --read-only             Expose only tools annotated ReadOnly=true (no document/file writes).",
+                "Tools:",
                 "  --enable-send-code      Expose arbitrary C# execution (default ON).",
-                "  --disable-send-code     Hide send_code_to_revit. --read-only also hides it.",
+                "  --disable-send-code     Hide send_code_to_revit.",
                 "  --enable-call-log       Persist tool-call params/results in server and plugin logs (default OFF).",
-                "  --disable-call-log      Suppress call logs, including the send_code body journal.",
+                "  --disable-call-log      Suppress call logs.",
                 "",
                 "Response limits (UTF-8 bytes, integers >=1024; warn <= strong <= budget <= max):",
                 "  --enable-response-guard / --disable-response-guard (default ON)",
@@ -175,8 +162,7 @@ namespace RvtMcp.Server
                 "                          here for future cross-process propagation.)",
                 "",
                 "Env vars (override JSON, overridden by CLI):",
-                "  BIMWRIGHT_TARGET, BIMWRIGHT_TOOLSETS, BIMWRIGHT_TOOLS, BIMWRIGHT_READ_ONLY,",
-                "  BIMWRIGHT_ALLOW_LAN_BIND,",
+                "  BIMWRIGHT_TARGET, BIMWRIGHT_ALLOW_LAN_BIND,",
                 "  BIMWRIGHT_ENABLE_SEND_CODE, BIMWRIGHT_ENABLE_CALL_LOG, BIMWRIGHT_ENABLE_RESPONSE_GUARD,",
                 "  BIMWRIGHT_RESPONSE_WARN_BYTES, BIMWRIGHT_RESPONSE_STRONG_WARN_BYTES,",
                 "  BIMWRIGHT_RESPONSE_BUDGET_BYTES, BIMWRIGHT_MAX_RESPONSE_BYTES,",
@@ -191,12 +177,7 @@ namespace RvtMcp.Server
             Console.WriteLine(usage);
         }
 
-        // MCP InitializeResult metadata. ServerInstructions is the single most important
-        // signal for Tool Search discoverability — Claude Code/Desktop's Tool Search ranks
-        // servers by (1) instructions, (2) literal tool name. Without this populated, an
-        // agent asking "list Revit tools" returns nothing even though 224 tools are exposed.
-        // Anthropic truncates this field at 2KB; the keyword-dense first paragraph carries
-        // the discoverability load if the SDK or proxy truncates later.
+        // ServerInstructions is what Tool Search ranks servers by; Anthropic truncates it at 2 KB.
         // InformationalVersion carries "+githash"; report clean semver to MCP clients.
         internal static readonly string ServerVersion =
             (Assembly.GetExecutingAssembly()
@@ -213,25 +194,15 @@ namespace RvtMcp.Server
                 Description = "Model Context Protocol gateway for Autodesk Revit 2022-2027",
                 WebsiteUrl = "https://github.com/bimwright/rvt-mcp"
             };
-            // A newer release known from the add-in's cached daily check (no network here).
             opts.ServerInstructions = ServerInstructionsText;
         }
 
-        // Anthropic Tool Search truncates this at 2 KB; the constant below is kept
-        // under 2048 UTF-8 bytes. Lead with the keyword paragraph (highest discriminative
-        // signal for queries like "list Revit tools"), then a compact toolset-name index
-        // — 2 examples per toolset — so semantic search for individual ops still resolves.
         private const string ServerInstructionsText =
 @"rvt-mcp — MCP gateway for Autodesk Revit 2022-2027: run C# in Revit, open models, capture/export views and sheets, call other add-ins' commands.
 
 Multi-Revit: list via revit_list_available_targets (a year can repeat); pin with revit_switch_target(""pid:<n>""); never guess. Do not retry export after 60s timeout.
 
-Tools (prefix revit_):
-- meta: send_code_to_revit, open_model, list_recent_models, list_available_targets, get_current_target, switch_target, list_addin_commands, call_addin_command
-- query: get_current_view_info
-- view: capture_view_image, activate_view
-- export: export_pdf, export_image
-- sheets: list_sheets";
+Tools (prefix revit_): send_code_to_revit, open_model, list_recent_models, list_available_targets, get_current_target, switch_target, list_addin_commands, call_addin_command, get_current_view_info, capture_view_image, activate_view, export_pdf, export_image, list_sheets";
 
         /// <summary>Parse a --target/BIMWRIGHT_TARGET/config selector (§6.1); R-codes get the educational error.</summary>
         internal static bool TryResolveTargetSelector(string raw, out TargetSelector selector, out string error)
@@ -248,59 +219,22 @@ Tools (prefix revit_):
             return false;
         }
 
-        internal static bool IncludeSendCode(HashSet<string> enabled, RvtMcpConfig config)
-        {
-            var sendCodeOn = config == null || config.EnableSendCodeOrDefault;
-            return sendCodeOn
-                && enabled.Contains("meta");
-        }
-
-        internal static IEnumerable<MethodInfo> ResolveRegisteredToolMethods(HashSet<string> enabled, RvtMcpConfig config)
-        {
-            var allow = ToolsetFilter.ToolAllowlist(config);
-            return ResolveRegisteredToolTypes(enabled, config)
+        internal static IEnumerable<MethodInfo> ResolveRegisteredToolMethods(RvtMcpConfig config)
+            => ResolveRegisteredToolTypes(config)
                 .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
-                .Where(method => method.GetCustomAttribute<McpServerToolAttribute>() != null)
-                .Where(method => config?.ReadOnlyOrDefault != true
-                    || method.GetCustomAttribute<McpServerToolAttribute>().ReadOnly
-                    // revit_switch_target is annotated ReadOnly=false (it mutates session
-                    // routing) but must stay exposed in read-only sessions so the agent
-                    // can always recover the target binding (spec §6.8/§6.11).
-                    || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_switch_target"
-                    // revit_call_addin_command stays too: it refuses an add-in command declared readOnly=false itself
-                    // (AddinMetaTools.ReadOnlyRefusal) and the plugin checks again.
-                    || method.GetCustomAttribute<McpServerToolAttribute>().Name == "revit_call_addin_command")
-                .Where(method => allow == null || allow.Contains(method.GetCustomAttribute<McpServerToolAttribute>().Name));
-        }
+                .Where(method => method.GetCustomAttribute<McpServerToolAttribute>() != null);
 
-        /// <summary>Allowlisted names that match no tool in any toolset — reported on stderr so a typo is visible.</summary>
-        internal static string[] UnknownAllowlistedTools(RvtMcpConfig config)
-        {
-            var allow = ToolsetFilter.ToolAllowlist(config);
-            if (allow == null) return Array.Empty<string>();
-            var everything = new RvtMcpConfig { Toolsets = new List<string> { "all" } };
-            var known = new HashSet<string>(ResolveRegisteredToolMethods(ToolsetFilter.Resolve(everything), everything)
-                .Select(m => m.GetCustomAttribute<McpServerToolAttribute>().Name), StringComparer.OrdinalIgnoreCase);
-            return allow.Where(n => !known.Contains(n)).OrderBy(n => n).ToArray();
-        }
+        internal static IMcpServerBuilder RegisterTools(IMcpServerBuilder mcp, RvtMcpConfig config)
+            => mcp.WithTools(ResolveRegisteredToolMethods(config).Select(method => McpServerTool.Create(method, (object)null)));
 
-        internal static IMcpServerBuilder RegisterToolsets(IMcpServerBuilder mcp, HashSet<string> enabled, RvtMcpConfig config)
+        internal static Type[] ResolveRegisteredToolTypes(RvtMcpConfig config)
         {
-            return mcp.WithTools(ResolveRegisteredToolMethods(enabled, config)
-                .Select(method => McpServerTool.Create(method, (object)null)));
-        }
-
-        internal static Type[] ResolveRegisteredToolTypes(HashSet<string> enabled, RvtMcpConfig config)
-        {
-            var types = new List<Type>();
-            if (enabled.Contains("query"))      types.Add(typeof(QueryTools));
-            if (enabled.Contains("query"))      types.Add(typeof(AddinQueryTools));
-            if (enabled.Contains("view"))       types.Add(typeof(ViewTools));
-            if (enabled.Contains("export"))     types.Add(typeof(ExportTools));
-            if (enabled.Contains("sheets"))      types.Add(typeof(SheetsTools));
-            if (IncludeSendCode(enabled, config)) types.Add(typeof(SendCodeTools));
-            if (enabled.Contains("meta"))       types.Add(typeof(MetaTools));
-            if (enabled.Contains("meta"))       types.Add(typeof(AddinMetaTools));
+            var types = new List<Type>
+            {
+                typeof(QueryTools), typeof(AddinQueryTools), typeof(ViewTools), typeof(ExportTools),
+                typeof(SheetsTools), typeof(MetaTools), typeof(AddinMetaTools)
+            };
+            if (config == null || config.EnableSendCodeOrDefault) types.Add(typeof(SendCodeTools));
             return types.ToArray();
         }
     }
@@ -331,7 +265,7 @@ Tools (prefix revit_):
         public static async Task<JObject> SendToRevit(string command, object parameters = null, int? timeoutSeconds = null)
         {
             var config = ServerState.Config ?? new RvtMcpConfig();
-            var rejection = ToolReadPolicy.Rejection(command, config.ReadOnlyOrDefault, config.EnableSendCodeOrDefault);
+            var rejection = ToolReadPolicy.Rejection(command, config.EnableSendCodeOrDefault);
             if (rejection != null) throw new InvalidOperationException(rejection);
             var sendOverride = SendOverride;
             if (sendOverride != null)
@@ -453,7 +387,7 @@ Tools (prefix revit_):
     // MCP client as plain text instead of throwing.
     // =====================================================================
 
-    [McpServerToolType, Toolset("query")]
+    [McpServerToolType]
     public class QueryTools
     {
         [McpServerTool(Name = "revit_get_current_view_info", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), System.ComponentModel.Description("Get active view info. Returns viewName, viewType (FloorPlan/Section/3D/Sheet), level, scale, detailLevel, displayStyle. Call before creating elements to know active level.")]
@@ -469,7 +403,7 @@ Tools (prefix revit_):
 
     }
 
-    [McpServerToolType, Toolset("view")]
+    [McpServerToolType]
     public class ViewTools
     {
         [McpServerTool(Name = "revit_capture_view_image", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false), System.ComponentModel.Description("Export a view to a raster image. output_path is optional; if provided it must be absolute and inside %TEMP% or %LOCALAPPDATA%\\Bimwright\\rvt-mcp\\captures\\. Params: view_id (optional, default active), output_path (optional, defaults under captures), pixel_size (default 1600), image_format ('png'|'jpeg', default 'png')." +
@@ -478,8 +412,6 @@ Tools (prefix revit_):
             string output_path = null,
             long? view_id = null, int pixel_size = 1600, string image_format = "png")
         {
-            var blocked = ServerState.BlockIfReadOnly("capture_view_image");
-            if (blocked != null) return blocked;
 
             try
             {
@@ -498,8 +430,6 @@ Tools (prefix revit_):
         [McpServerTool(Name = "revit_activate_view", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), System.ComponentModel.Description("Set the active view in Revit UI. UI-only operation. Params: view_id OR view_name (required).")]
         public static async Task<string> ActivateView(long? view_id = null, string view_name = null)
         {
-            var blocked = ServerState.BlockIfReadOnly("activate_view");
-            if (blocked != null) return blocked;
 
             try
             {
@@ -511,7 +441,7 @@ Tools (prefix revit_):
 
     }
 
-    [McpServerToolType, Toolset("export")]
+    [McpServerToolType]
     public class ExportTools
     {
         [McpServerTool(Name = "revit_export_pdf", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false), System.ComponentModel.Description("Export sheets or views to PDF. outputFolder must be an existing absolute path. viewIds defaults to the active view. combine=true produces one combined PDF. Do not retry on 60s timeout; Revit may still be running the command." +
@@ -540,7 +470,7 @@ Tools (prefix revit_):
 
     }
 
-    [McpServerToolType, Toolset("meta")]
+    [McpServerToolType]
     public class SendCodeTools
     {
         [McpServerTool(Name = "revit_send_code_to_revit"), System.ComponentModel.Description("Compile + run C# inside Revit for workflows not covered by typed tools. Variables: doc (Document), uidoc (UIDocument), app (UIApplication) - doc and uidoc are null when no model is open, which is legal: use app.OpenAndActivateDocument(path) to open one, or prefer the typed revit_open_model tool. Write a C# body ending in return; helper type declarations may accompany the body. Or provide a complete public McpDynamicScript with public static object Run(UIApplication app). For transactions/StairsEditScope.Commit, RvtMcp.Plugin.SafeFailuresPreprocessor records/deletes warnings and rolls back errors; report HadWarnings/Messages as committed_with_warnings; inspect HadErrors and commit status before reporting success. Output above 700 KiB auto-spills to a local same-machine file with schema and preview; there is no output parameter. Remote clients receive preview but cannot read the local file. Namespaces: System, System.Linq, System.Collections.Generic, Autodesk.Revit.DB, Autodesk.Revit.UI.")]
@@ -555,7 +485,7 @@ Tools (prefix revit_):
         }
     }
 
-    [McpServerToolType, Toolset("meta")]
+    [McpServerToolType]
     public class MetaTools
     {
         [McpServerTool(Name = "revit_list_recent_models", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false), System.ComponentModel.Description(
@@ -594,8 +524,6 @@ Tools (prefix revit_):
             "NOTE: opening a model saved in an older Revit upgrades it in memory - that only reaches disk if something saves it.")]
         public static async Task<string> OpenModel(string path, bool activate = true, bool audit = false, string worksets = null, int timeout_seconds = 600)
         {
-            var blocked = ServerState.BlockIfReadOnly("open_model");
-            if (blocked != null) return blocked;
 
             var timeoutError = ToolGateway.ValidateTimeoutSeconds(timeout_seconds);
             if (timeoutError != null) return timeoutError;
@@ -969,7 +897,7 @@ Tools (prefix revit_):
         }
     }
 
-    [McpServerToolType, Toolset("sheets")]
+    [McpServerToolType]
     public class SheetsTools
     {
         private static JArray NormalizeOptionalJsonArray(object value, string parameterName)

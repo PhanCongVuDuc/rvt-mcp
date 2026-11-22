@@ -2,7 +2,6 @@ using System;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
 using RvtMcp.Plugin.Views;
-using RvtMcp.Plugin.Views.Settings;
 
 namespace RvtMcp.Plugin
 {
@@ -35,7 +34,6 @@ namespace RvtMcp.Plugin
         private CommandDispatcher _dispatcher;
         private IdlingUpdater _idlingUpdater;
         private HistoryWindow _historyWindow;
-        private SettingsWindow _settingsWindow;
         private UIControlledApplication _ribbonApplication;
 
         public Result OnStartup(UIControlledApplication application)
@@ -48,8 +46,6 @@ namespace RvtMcp.Plugin
             McpLogger.Initialize();
             SessionLog = new McpSessionLog();
             Config = RvtMcpConfig.Load(args: null);
-            Localization.LocalizationHost.InitializePlugin(
-                application.ControlledApplication.Language.ToString(), Config.UiLanguage, DebugLog);
             ToastEnabled = Config.EnableToastOrDefault;
             DebugLog("OnStartup: McpLogger + SessionLog OK");
 
@@ -77,9 +73,7 @@ namespace RvtMcp.Plugin
         {
             application.ControlledApplication.DocumentChanged -= McpChangeTracker.OnDocumentChanged;
             application.Idling -= OnIdling;
-            Localization.LocalizationHost.ShutdownPlugin();
             _historyWindow?.Close();
-            _settingsWindow?.CloseForShutdown();
 
             StopTransport();
             _handler?.CancelAll();
@@ -157,28 +151,6 @@ namespace RvtMcp.Plugin
             {
                 _historyWindow.Activate();
             }
-        }
-
-        public void ShowOrFocusSettingsWindow(SettingsTab initialTab = SettingsTab.General)
-        {
-            if (_settingsWindow == null || !_settingsWindow.IsLoaded)
-            {
-                _settingsWindow = new SettingsWindow(this, initialTab);
-                var hwnd = _ribbonApplication?.MainWindowHandle ?? IntPtr.Zero;
-                if (hwnd != IntPtr.Zero) new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Owner = hwnd;
-                _settingsWindow.Show();
-            }
-            else
-            {
-                _settingsWindow.SelectTab(initialTab);
-                if (!_settingsWindow.IsVisible) _settingsWindow.Show();
-                _settingsWindow.Activate();
-            }
-        }
-
-        public void FocusSettingsLanguage()
-        {
-            _settingsWindow?.FocusLanguage();
         }
 
         private void OnIdling(object sender, IdlingEventArgs e)

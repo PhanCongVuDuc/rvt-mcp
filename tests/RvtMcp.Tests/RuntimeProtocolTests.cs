@@ -24,11 +24,9 @@ namespace RvtMcp.Tests
     {
 
         [Theory]
-        [InlineData(false, false)]
-        [InlineData(false, true)]
-        [InlineData(true, false)]
-        [InlineData(true, true)]
-        public async Task Real_MCP_protocol_exposes_annotations_filters_calls_and_obeys_logging(bool readOnly, bool log)
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task Real_MCP_protocol_exposes_annotations_filters_calls_and_obeys_logging(bool log)
         {
             var root = Path.Combine(Path.GetTempPath(), "rvt-protocol-" + Guid.NewGuid().ToString("N"));
             var original = ServerState.Config;
@@ -43,8 +41,7 @@ namespace RvtMcp.Tests
             try
             {
                 var config = new RvtMcpConfig
-                {
-                    Toolsets = new List<string> { "all" }, ReadOnly = readOnly, EnableCallLog = log,
+                { EnableCallLog = log,
                     EnableSendCode = false, ResponseWarnBytes = 2048, ResponseStrongWarnBytes = 4096,
                     ResponseBudgetBytes = 8192, MaxResponseBytes = 32768
                 };
@@ -60,16 +57,12 @@ namespace RvtMcp.Tests
                 builder.Logging.ClearProviders();
                 var mcp = builder.Services.AddMcpServer().WithStreamServerTransport(input, input);
                 mcp = RuntimeToolFilter.Register(mcp, config, session);
-                Program.RegisterToolsets(mcp, ToolsetFilter.Resolve(config), config);
+                Program.RegisterTools(mcp, config);
                 using var host = builder.Build();
                 await host.StartAsync(deadline.Token);
                 await using var client = await McpClient.CreateAsync(new StreamClientTransport(output, output), cancellationToken: deadline.Token);
                 var tools = await client.ListToolsAsync(cancellationToken: deadline.Token);
                 Assert.DoesNotContain(tools, tool => tool.Name == "revit_send_code_to_revit");
-                // revit_switch_target is ReadOnly=false but stays exposed under --read-only
-                // so the agent can recover the target binding (spec §6.8/§6.11).
-                if (readOnly) Assert.All(tools.Where(t => t.Name != "revit_switch_target" && t.Name != "revit_call_addin_command"),
-                    tool => Assert.True(tool.ProtocolTool.Annotations.ReadOnlyHint));
                 Assert.Contains(tools, tool => tool.Name == "revit_list_sheets");
                 var response = await client.CallToolAsync("revit_get_current_view_info",
                     new Dictionary<string, object>(), cancellationToken: deadline.Token);
@@ -81,7 +74,6 @@ namespace RvtMcp.Tests
                 Assert.Equal(2, session.CallCount);
                 Assert.Equal(log, Directory.Exists(Path.Combine(root, "journal")));
                 if (log) Assert.Equal(2, File.ReadAllLines(Directory.GetFiles(Path.Combine(root, "journal"))[0]).Length);
-                if (!readOnly)
                 {
                     response = await client.CallToolAsync("revit_export_image",
                         new Dictionary<string, object> { ["outputPath"] = Path.Combine(root, "view.png") }, cancellationToken: deadline.Token);

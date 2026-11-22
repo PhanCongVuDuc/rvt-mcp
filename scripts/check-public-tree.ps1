@@ -10,11 +10,11 @@ $publicDocs = @(
     'AGENTS.md', 'ARCHITECTURE.md', 'CHANGELOG.md', 'CLAUDE.md',
     'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md',
     'README.md',
-    'docs/addin-commands.md', 'docs/install.md', 'docs/localization.md',
+    'docs/addin-commands.md', 'docs/install.md',
     'docs/mcp-client-wiring.md', 'docs/mcp-config-claude-clients.md',
     'docs/mcp-config-codex.md', 'docs/mcp-config-opencode-kilo.md',
     'docs/send-code.md', 'docs/stairs-workflow.md', 'src/server/Prompts/stairs.md',
-    'tests/RvtMcp.Tests/README.md', 'tests/RvtMcp.Settings.Tests/README.md'
+    'tests/RvtMcp.Tests/README.md'
 )
 $privatePath = '(^|/)(\.(artifacts[^/]*|worktrees|claude|cursor|kilo|agents|openclaude)|internal-docs|analysis|artifacts|runs|spikes)(/|$)|^docs/(superpowers|design|reviews|research-archive|archive)/|(^|/)codemap\.md$'
 $docExtension = '\.(md|mdx|markdown|rst|txt|canvas|docx?|pdf)$'

@@ -32,28 +32,6 @@ namespace RvtMcp.Tests
             }
         }
 
-        [Fact]
-        public void TrySave_uses_atomic_replace_and_preserves_unknown_keys()
-        {
-            var path = NewConfigPath();
-            try
-            {
-                File.WriteAllText(path, "{\"target\":\"2026\",\"ownerExtension\":{\"keep\":true}}");
-                string error;
-                Assert.True(RvtMcpConfig.TrySaveToastIdleSeconds(30, out error, path), error);
-
-                var root = JObject.Parse(File.ReadAllText(path));
-                Assert.Equal(30, (int)root["toastIdleSeconds"]);
-                Assert.Equal("2026", (string)root["target"]);
-                Assert.True((bool)root["ownerExtension"]["keep"]);
-                Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path), Path.GetFileName(path) + ".*.tmp"));
-            }
-            finally
-            {
-                if (File.Exists(path)) File.Delete(path);
-            }
-        }
-
         [Theory]
         [InlineData(10, 10)]
         [InlineData(20, 20)]

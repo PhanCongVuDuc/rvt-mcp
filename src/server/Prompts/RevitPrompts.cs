@@ -13,15 +13,13 @@ namespace RvtMcp.Server.Prompts
     [McpServerPromptType]
     public class RevitPrompts
     {
-        // Stairs' first step is revit_get_current_target, which only the meta set exposes.
-        private static readonly string[] StairsSets = { "meta" };
 
         [McpServerPrompt(Name = "revit_stairs"),
          Description("Guided stair creation via send_code: resolve the design together, confirm, then write and verify.")]
         public static string Stairs()
         {
             return PromptBody.Render(
-                PromptBody.Load("stairs"), StairsSets, requiresSendCode: true);
+                PromptBody.Load("stairs"), requiresSendCode: true);
         }
     }
 }

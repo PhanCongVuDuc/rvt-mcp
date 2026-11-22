@@ -68,7 +68,6 @@ namespace RvtMcp.Tests
         {
             var config = new RvtMcpConfig();
             RvtMcpConfig.ApplyCliArgs(config, new[] { "--toolsets", "query,view" });
-            Assert.Equal(new[] { "query", "view" }, config.Toolsets);
         }
 
         [Fact]
@@ -78,11 +77,9 @@ namespace RvtMcp.Tests
             RvtMcpConfig.ApplyCliArgs(config,
                 new[]
                 {
-                    "--read-only",
                     "--allow-lan-bind",
                     "--cache-send-code-bodies",
                 });
-            Assert.True(config.ReadOnly);
             Assert.True(config.AllowLanBind);
             Assert.True(config.CacheSendCodeBodies);
         }
@@ -101,7 +98,6 @@ namespace RvtMcp.Tests
             var config = new RvtMcpConfig();
             RvtMcpConfig.ApplyCliArgs(config, new[] { "--weird-flag", "positional" });
             Assert.Null(config.Target);
-            Assert.Null(config.ReadOnly);
         }
 
         // --- ApplyEnvVars --------------------------------------------------
@@ -113,15 +109,11 @@ namespace RvtMcp.Tests
             RvtMcpConfig.ApplyEnvVars(config, EnvLookup(new Dictionary<string, string>
             {
                 [RvtMcpConfig.EnvTarget] = "2027",
-                [RvtMcpConfig.EnvToolsets] = "query,create",
-                [RvtMcpConfig.EnvReadOnly] = "true",
                 [RvtMcpConfig.EnvAllowLanBind] = "1",
                 [RvtMcpConfig.EnvCacheSendCodeBodies] = "1",
                 [RvtMcpConfig.EnvEnableToast] = "true",
             }));
             Assert.Equal("2027", config.Target);
-            Assert.Equal(new[] { "query", "create" }, config.Toolsets);
-            Assert.True(config.ReadOnly);
             Assert.True(config.AllowLanBind);
             Assert.True(config.CacheSendCodeBodies);
             Assert.True(config.EnableToast);
@@ -133,7 +125,6 @@ namespace RvtMcp.Tests
             var config = new RvtMcpConfig { Target = "2023" };
             RvtMcpConfig.ApplyEnvVars(config, EnvLookup(new Dictionary<string, string>()));
             Assert.Equal("2023", config.Target);
-            Assert.Null(config.ReadOnly);
         }
 
         // --- LoadFromJsonFile ---------------------------------------------
@@ -174,8 +165,6 @@ namespace RvtMcp.Tests
                 var config = RvtMcpConfig.LoadFromJsonFile(path);
                 Assert.NotNull(config);
                 Assert.Equal("2024", config.Target);
-                Assert.Equal(new[] { "query", "view" }, config.Toolsets);
-                Assert.True(config.ReadOnly);
                 Assert.Null(config.AllowLanBind); // absent → null
                 Assert.True(config.CacheSendCodeBodies);
             }
@@ -195,7 +184,6 @@ namespace RvtMcp.Tests
                 var env = EnvLookup(new Dictionary<string, string>
                 {
                     [RvtMcpConfig.EnvTarget]    = "2025",
-                    [RvtMcpConfig.EnvReadOnly]  = "true",
                 });
 
                 var cli = new[] { "--target", "2027" }; // CLI only overrides target
@@ -203,7 +191,6 @@ namespace RvtMcp.Tests
                 var config = RvtMcpConfig.Load(cli, path, env);
 
                 Assert.Equal("2027", config.Target);   // CLI wins
-                Assert.True(config.ReadOnly);          // env wins (CLI didn't set)
             }
             finally { File.Delete(path); }
         }
@@ -229,8 +216,6 @@ namespace RvtMcp.Tests
                 configFilePath: Path.Combine(Path.GetTempPath(), "never-exists.json"),
                 envLookup: EnvLookup(new Dictionary<string, string>()));
             Assert.Null(config.Target);
-            Assert.Null(config.Toolsets);
-            Assert.False(config.ReadOnlyOrDefault);
             Assert.False(config.AllowLanBindOrDefault);
             Assert.False(config.CacheSendCodeBodiesOrDefault);
             Assert.True(config.EnableToastOrDefault);
@@ -242,7 +227,6 @@ namespace RvtMcp.Tests
         public void OrDefault_UnsetFieldsFallToCodeDefaults()
         {
             var config = new RvtMcpConfig();
-            Assert.False(config.ReadOnlyOrDefault);
             Assert.False(config.AllowLanBindOrDefault);
             Assert.False(config.CacheSendCodeBodiesOrDefault);
             Assert.True(config.EnableToastOrDefault);
@@ -252,42 +236,13 @@ namespace RvtMcp.Tests
         public void OrDefault_ExplicitValuesWinOverDefaults()
         {
             var config = new RvtMcpConfig
-            {
-                ReadOnly = true,
-                AllowLanBind = true,
+            { AllowLanBind = true,
                 CacheSendCodeBodies = true,
                 EnableToast = true,
             };
-            Assert.True(config.ReadOnlyOrDefault);
             Assert.True(config.AllowLanBindOrDefault);
             Assert.True(config.CacheSendCodeBodiesOrDefault);
             Assert.True(config.EnableToastOrDefault);
-        }
-
-        [Fact]
-        public void SaveEnableToast_PreservesOtherKeysAndSetsFlag()
-        {
-            var path = Path.Combine(Path.GetTempPath(), "rvtmcp-toast-save-" + Path.GetRandomFileName() + ".json");
-            try
-            {
-                File.WriteAllText(path, @"{""target"":""2026"",""readOnly"":true}");
-                RvtMcpConfig.SaveEnableToast(true, path);
-
-                var reloaded = RvtMcpConfig.LoadFromJsonFile(path);
-                Assert.NotNull(reloaded);
-                Assert.Equal("2026", reloaded.Target);
-                Assert.True(reloaded.ReadOnly);
-                Assert.True(reloaded.EnableToast);
-
-                RvtMcpConfig.SaveEnableToast(false, path);
-                reloaded = RvtMcpConfig.LoadFromJsonFile(path);
-                Assert.False(reloaded.EnableToast);
-                Assert.Equal("2026", reloaded.Target);
-            }
-            finally
-            {
-                if (File.Exists(path)) File.Delete(path);
-            }
         }
 
         [Fact]

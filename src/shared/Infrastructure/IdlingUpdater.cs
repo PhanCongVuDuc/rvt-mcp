@@ -71,19 +71,6 @@ namespace RvtMcp.Plugin
                 }
             }
 
-            if (locChanged)
-            {
-                if (_ribbon.SettingsButton != null)
-                {
-                    _ribbon.SettingsButton.ItemText = L.T("ribbon.settings.text");
-                    _ribbon.SettingsButton.ToolTip = L.T("ribbon.settings.tooltip");
-                }
-                if (_ribbon.LanguageButton != null)
-                {
-                    _ribbon.LanguageButton.ItemText = Views.Settings.InvariantLanguageText.RibbonCaption;
-                    _ribbon.LanguageButton.ToolTip = L.T("ribbon.language.tooltip");
-                }
-            }
         }
 
         private void ApplyToggleState(bool isRunning, ITransportServer transport)

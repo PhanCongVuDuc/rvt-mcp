@@ -17,18 +17,12 @@ namespace RvtMcp.Tests
         [Fact]
         public void Every_revit_tool_name_in_prompt_bodies_exists_in_catalog()
         {
-            var serverAssembly = typeof(RvtMcp.Server.ToolsetFilter).Assembly;
+            var serverAssembly = typeof(RvtMcp.Server.MetaTools).Assembly;
             var programType = serverAssembly.GetType("RvtMcp.Server.Program")!;
             var resolveToolTypes = programType.GetMethod(
                 "ResolveRegisteredToolTypes", BindingFlags.NonPublic | BindingFlags.Static)!;
 
-            var config = new RvtMcpConfig
-            {
-                Toolsets = new List<string> { "all" }
-            };
-            var enabled = RvtMcp.Server.ToolsetFilter.Resolve(config);
-
-            var toolClasses = (Type[])resolveToolTypes.Invoke(null, new object[] { enabled, config })!;
+            var toolClasses = (Type[])resolveToolTypes.Invoke(null, new object[] { new RvtMcpConfig() })!;
             var toolNames = toolClasses
                 .SelectMany(cls => cls.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance))
                 .Select(m => m.GetCustomAttribute<McpServerToolAttribute>())

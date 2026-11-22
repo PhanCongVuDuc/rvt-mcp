@@ -136,23 +136,6 @@ namespace RvtMcp.Tests.Addins
         }
 
         [Fact]
-        public void Read_only_blocks_a_command_that_is_not_read_only_and_never_runs_it()
-        {
-            var ran = false;
-            Register("Sonny.Revit", Fake(_ =>
-            {
-                ran = true;
-                return @"{""ok"":true,""result"":{}}";
-            }));
-
-            var outcome = AddinCommandRegistry.Call(@"{""addin"":""Sonny.Revit"",""command"":""walls.delete"",""read_only"":true}");
-
-            Assert.False(outcome.Success);
-            Assert.StartsWith("read_only_blocked", outcome.Error);
-            Assert.False(ran);
-        }
-
-        [Fact]
         public void Read_only_lets_a_read_only_command_through()
         {
             Register("Sonny.Revit", Fake(_ => @"{""ok"":true,""result"":{""count"":12}}"));

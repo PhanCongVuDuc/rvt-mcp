@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using RvtMcp.ToolCatalog;
 
 namespace RvtMcp.Plugin
 {
@@ -141,7 +140,6 @@ namespace RvtMcp.Plugin
             client.ReceiveTimeout = 120000;
             _clientConnected = true;
             lock (_clientGate) { _activeClient = client; }
-            var conn = ToolCatalogStore.BeginConnection();
             try
             {
                 var stream = client.GetStream();
@@ -219,17 +217,10 @@ namespace RvtMcp.Plugin
                     // Internal server -> plugin handshake messages are consumed here,
                     // after token auth and before rate limiting or the Revit callback.
                     // They must never enter history, usage, toast, or ExternalEvent.
-                    if (string.Equals(command, "set_tool_catalog", StringComparison.Ordinal))
+                    if (string.Equals(command, "handshake", StringComparison.Ordinal))
                     {
-                        var catalogResult = ToolCatalogStore.AcceptJson(paramsJson, conn);
-                        var catalogResponse = new Newtonsoft.Json.Linq.JObject
-                        {
-                            ["id"] = id,
-                            ["success"] = catalogResult.IsValid
-                        };
-                        if (!catalogResult.IsValid)
-                            catalogResponse["error"] = catalogResult.Error;
-                        try { writer.WriteLine(catalogResponse.ToString(Newtonsoft.Json.Formatting.None)); } catch { break; }
+                        var handshakeResponse = new Newtonsoft.Json.Linq.JObject { ["id"] = id, ["success"] = true };
+                        try { writer.WriteLine(handshakeResponse.ToString(Newtonsoft.Json.Formatting.None)); } catch { break; }
                         continue;
                     }
 
@@ -276,7 +267,6 @@ namespace RvtMcp.Plugin
             {
                 _clientConnected = false;
                 lock (_clientGate) { _activeClient = null; }
-                ToolCatalogStore.Clear(conn);
             }
         }
 

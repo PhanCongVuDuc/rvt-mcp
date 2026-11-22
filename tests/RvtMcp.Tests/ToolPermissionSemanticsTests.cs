@@ -58,8 +58,8 @@ namespace RvtMcp.Tests
 
         private static MethodInfo[] Tools()
         {
-            var config = new RvtMcpConfig { Toolsets = new List<string> { "all" }};
-            return Program.ResolveRegisteredToolMethods(ToolsetFilter.Resolve(config), config).ToArray();
+            var config = new RvtMcpConfig { };
+            return Program.ResolveRegisteredToolMethods(config).ToArray();
         }
     }
 }

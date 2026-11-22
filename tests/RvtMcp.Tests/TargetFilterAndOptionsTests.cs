@@ -39,7 +39,7 @@ namespace RvtMcp.Tests
             await Task.WhenAll(input.WaitForConnectionAsync(deadline.Token), output.ConnectAsync(deadline.Token));
             try
             {
-                var config = new RvtMcpConfig { Toolsets = new List<string> { "query" } };
+                var config = new RvtMcpConfig { };
                 ServerState.Config = config;
                 var payload = new Bimwright.Targeting.TargetPayload
                 {
@@ -53,7 +53,7 @@ namespace RvtMcp.Tests
                 builder.Logging.ClearProviders();
                 var mcp = builder.Services.AddMcpServer().WithStreamServerTransport(input, input);
                 mcp = RuntimeToolFilter.Register(mcp, config, new SessionContext(false, root));
-                Program.RegisterToolsets(mcp, ToolsetFilter.Resolve(config), config);
+                Program.RegisterTools(mcp, config);
                 using var host = builder.Build();
                 await host.StartAsync(deadline.Token);
                 await using var client = await McpClient.CreateAsync(new StreamClientTransport(output, output), cancellationToken: deadline.Token);

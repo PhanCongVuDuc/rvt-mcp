@@ -99,9 +99,9 @@ Timeout: 60s by default. Long-run tools accept `timeout_seconds` from 1–900; I
 
 Wire JSON over 1 MiB is rejected (100 KB logs an S4 warning). Narrow filters / `max_results` instead of retrying the same dump.
 
-## Toolsets
+## Tool registration
 
-The 14 tools sit in five toolset classes (`QueryTools`, `ViewTools`, `ExportTools`, `MetaTools`, `SheetsTools`, plus the add-in tools). `Program.RegisterToolsets` registers only enabled toolsets and `--tools` narrows to a per-tool allowlist, so hidden tools never appear in `tools/list`. `--read-only` keeps only tools annotated read-only (plus `switch_target` and `call_addin_command`, which guard themselves).
+All 14 tools are registered on every start (`Program.ResolveRegisteredToolTypes`); `--disable-send-code` is the only switch that hides one. The server↔plugin handshake (`handshake`, authenticated, 5 s budget) tells a busy Revit from an unreachable one before any command is sent.
 
 ## Notifications
 
@@ -113,8 +113,8 @@ Tool-call activity is shown as a Windows notification raised by the server (`Ser
 RvtMcpConfig.Load(args, configFilePath)
    │
    ├── Layer 1: JSON file at %LOCALAPPDATA%\Bimwright\rvt-mcp\rvtmcp.config.json
-   ├── Layer 2: env vars (BIMWRIGHT_TARGET, BIMWRIGHT_TOOLSETS, …)
-   └── Layer 3: CLI args (--target, --toolsets, --read-only, …)
+   ├── Layer 2: env vars (BIMWRIGHT_TARGET, BIMWRIGHT_ENABLE_SEND_CODE, …)
+   └── Layer 3: CLI args (--target, --disable-send-code, …)
                     (later layers overwrite earlier; nulls don't override)
 ```
 
