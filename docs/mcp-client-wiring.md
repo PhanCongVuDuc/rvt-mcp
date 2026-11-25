@@ -192,7 +192,8 @@ grok mcp list; grok mcp doctor
 ### Antigravity (file)
 
 - `~/.gemini/antigravity/mcp_config.json` (on some installs it is a symlink to
-  `~/.gemini/config/mcp_config.json`). Key `mcpServers`, standard shape.
+  `~/.gemini/config/mcp_config.json`; Antigravity 2.0 uses the `config/` path). Key `mcpServers`, standard shape.
+- Deeper reference: [mcp-config-antigravity.md](mcp-config-antigravity.md).
 
 ### Devin (file)
 

@@ -1,21 +1,33 @@
 # Changelog
 
-## Unreleased — add-in commands (fork `PhanCongVuDuc/rvt-mcp`, branch `feat/addin-commands`)
+## v1.2.0 — 2026-11-25 (fork `PhanCongVuDuc/rvt-mcp`)
 
+Sonny trim release.
+
+### Trimmed to 14 tools
+- Only the 14 tools in daily use (`README → Tools`) are registered. Removed `ToolBaker`/adaptive bake, change
+  history, journal, survey, lint, update-check, the HTTP transport and SQLite code paths. There are **no toolsets**,
+  **no** `--tools`/`BIMWRIGHT_TOOLS`/config allowlist, and **no** `--read-only` mode. `--disable-send-code` still
+  hides `send_code`; every other tool is always registered.
+- Activity feedback is now a **Windows notification** raised by the server (`ServerToast`), not a WPF toast drawn on
+  Revit's UI thread.
+
+### Add-in commands
 - Another add-in loaded in the same Revit can register its commands with rvt-mcp without referencing it: under the
   AppDomain data key `Bimwright.RvtMcp.AddinCommands.v1` it puts a `ConcurrentDictionary<string, Func<string, string>>`
   (add-in name → envelope JSON in, envelope JSON out; reserved command `_catalog`, protocol `1`). rvt-mcp reads the key on
   every call, so load order does not matter and a new add-in command needs no rvt-mcp change.
 - Plugin commands `list_addin_commands` and `call_addin_command`; MCP tools `revit_list_addin_commands` (`query`,
-  read-only) and `revit_call_addin_command` (`meta`; stays in `--read-only` sessions and refuses add-in commands declared
-  `readOnly=false` with `read_only_blocked`). Errors: `addin_not_loaded`, `read_only_blocked`, `addin_protocol_mismatch`,
+  read-only) and `revit_call_addin_command` (`meta`). Errors: `addin_not_loaded`, `addin_protocol_mismatch`,
   `addin_failed` (path-sanitized).
-- CLI: `rvt-mcp addin list [--target …]`, `rvt-mcp addin call <addin> <command> [--args <json>] [--target …] [--read-only]
+- CLI: `rvt-mcp addin list [--target …]`, `rvt-mcp addin call <addin> <command> [--args <json>] [--target …]
   [--timeout <s>]` — JSON on stdout, exit 0/1/2; several Revit sessions without `--target` is an error listing them.
-- Tool counts: default **48**, `--toolsets all` **235**, adaptive bake **238**.
-- `--tools <csv>` / `BIMWRIGHT_TOOLS` / config `"tools"`: per-tool allowlist (names with or without `revit_`). Only
-  listed tools are registered; without `--toolsets` every toolset is searched, `--read-only` and `--disable-send-code`
-  still apply, and names that match no tool are reported on stderr.
+
+### Docs
+- Added `docs/mcp-config-antigravity.md` — Google Antigravity (Gemini-CLI family) wiring reference. Antigravity was
+  already a first-class `-Client` in `install.ps1` and listed in `mcp-client-wiring.md`; this is the deeper per-vendor doc.
+
+### Runtime
 - Server runs Workstation GC (`ServerGarbageCollection=false`). `Sdk.Web` defaulted it to Server GC, one heap and GC
   thread per logical core: on a 32-core machine each stdio server idled at ~107 MB private / 51 threads, now ~37 MB /
   20 threads, and no longer keeps hundreds of MB committed after a burst.
@@ -24,6 +36,7 @@
 
 | Version | Date | Available as |
 |---|---|---|
+| v1.2.0 | 2026-11-25 | [GitHub Release](https://github.com/PhanCongVuDuc/rvt-mcp/releases/tag/v1.2.0) |
 | v1.1.0 | 2026-10-07 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v1.1.0) |
 | v1.0.1 | 2026-10-04 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v1.0.1) |
 | v1.0.0 | 2026-10-03 | [GitHub Release](https://github.com/bimwright/rvt-mcp/releases/tag/v1.0.0); NuGet `RvtMcp.Server` 1.0.0 |
